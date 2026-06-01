@@ -1,10 +1,11 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
+const passport = require('./config/passport');
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 4000;
@@ -45,15 +46,18 @@ app.get('/health', (_req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// Passport (sin sesión — usamos JWT)
+// ─────────────────────────────────────────────
+app.use(passport.initialize());
+
+// ─────────────────────────────────────────────
 // Rutas
 // ─────────────────────────────────────────────
-// TODO Fase 0: agregar rutas a medida que se implementan
-// app.use('/auth', require('./routes/auth'));
-// app.use('/api/users', require('./routes/users'));
-// app.use('/api/assets', require('./routes/assets'));
+app.use('/auth', require('./routes/auth'));
+// app.use('/api/users',   require('./routes/users'));
+// app.use('/api/assets',  require('./routes/assets'));
 // app.use('/api/tickets', require('./routes/tickets'));
 
-// Ruta de prueba
 app.get('/api', (_req, res) => {
   res.json({
     message: 'TechOpsHub API v0.1.0',

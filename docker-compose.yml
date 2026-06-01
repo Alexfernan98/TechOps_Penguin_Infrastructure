@@ -54,7 +54,7 @@ services:
         condition: service_healthy
     networks:
       - techops_net
-    command: npm run dev
+    command: sh -c "npx prisma migrate deploy && npm run dev"
 
   # ─────────────────────────────────────────────
   # Frontend (React + Vite)
