@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  IT_ADMIN
+  IT_TECH
+  EMPLOYEE
+  READ_ONLY
+}
+
+enum AssetStatus {
+  AVAILABLE
+  ASSIGNED
+  LOAN
+  REPAIR
+  DAMAGED
+  RETIRED
+  LOST
+}
+
+enum AssetCondition {
+  GOOD
+  FAIR
+  DAMAGED
+}
+
+enum TicketStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  PENDING_USER
+  RESOLVED
+  CLOSED
+  REOPENED
+  CANCELLED
+}
+
+enum TicketPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TicketCategory {
+  TECH_SUPPORT
+  EQUIPMENT_REQUEST
+  ACCESS_PERMISSIONS
+  CONNECTIVITY
+  SOFTWARE
+  SECURITY
+  OTHER
+}
+
+enum ActaType {
+  DELIVERY
+  RETURN
+  RETIREMENT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ASSIGN
+  UNASSIGN
+  STATUS_CHANGE
+  LOGIN
+  LOGOUT
+}
+
+model User {
+  id             String    @id @default(cuid())
+  googleId       String    @unique
+  email          String    @unique
+  name           String
+  avatarUrl      String?
+  role           Role      @default(EMPLOYEE)
+  departmentSlug String?
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  assignedAssets  AssetAssignment[] @relation("AssignedToUser")
+  managedAssets   AssetAssignment[] @relation("AssignedByUser")
+  createdTickets  Ticket[]          @relation("TicketCreatedBy")
+  assignedTickets Ticket[]          @relation("TicketAssignedTo")
+  ticketComments  TicketComment[]
+  actasAsFirmante Acta[]            @relation("ActaFirmante")
+  actasAsReceptor Acta[]            @relation("ActaReceptor")
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  csatResponses   CsatResponse[]
+
+  @@index([email])
+  @@index([departmentSlug])
+  @@map("users")
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  siteCode  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  assets Asset[]
+
+  @@map("locations")
+}
+
+model Department {
+  id         String   @id @default(cuid())
+  slug       String   @unique
+  name       String
+  parentSlug String?
+  type       String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@map("departments")
+}
+
+model AssetCategory {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  tagPrefix String
+  icon      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  assets Asset[]
+
+  @@map("asset_categories")
+}
+
+model Asset {
+  id                String         @id @default(cuid())
+  tag               String         @unique
+  categorySlug      String
+  brand             String?
+  model             String?
+  serialNumber      String?        @unique
+  imei              String?
+  macWifi           String?
+  macEth            String?
+  operatingSystem   String?
+  status            AssetStatus    @default(AVAILABLE)
+  condition         AssetCondition @default(GOOD)
+  departmentSlug    String?
+  locationSlug      String?
+  details           String?        @db.Text
+  purchaseDate      DateTime?
+  vendor            String?
+  warrantyUntil     DateTime?
+  accessories       String?        @db.Text
+  evidenceFolderUrl String?
+  lastRevisionDate  DateTime?
+  notes             String?        @db.Text
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  category    AssetCategory     @relation(fields: [categorySlug], references: [slug])
+  location    Location?         @relation(fields: [locationSlug], references: [slug])
+  assignments AssetAssignment[]
+  actas       Acta[]
+
+  @@index([status])
+  @@index([categorySlug])
+  @@index([departmentSlug])
+  @@index([warrantyUntil])
+  @@index([deletedAt])
+  @@map("assets")
+}
+
+model AssetAssignment {
+  id           String    @id @default(cuid())
+  assetId      String
+  userId       String
+  assignedById String
+  assignedAt   DateTime  @default(now())
+  returnedAt   DateTime?
+  notes        String?   @db.Text
+
+  asset      Asset @relation(fields: [assetId], references: [id])
+  user       User  @relation("AssignedToUser", fields: [userId], references: [id])
+  assignedBy User  @relation("AssignedByUser", fields: [assignedById], references: [id])
+
+  @@index([assetId])
+  @@index([userId])
+  @@index([returnedAt])
+  @@map("asset_assignments")
+}
+
+model Acta {
+  id              String         @id @default(cuid())
+  type            ActaType
+  assetId         String
+  receptorId      String
+  firmanteId      String
+  relatedActaId   String?
+  pdfUrl          String?
+  signedAt        DateTime       @default(now())
+  conditionBefore AssetCondition?
+  conditionAfter  AssetCondition?
+  daysInUse       Int?
+  observations    String?        @db.Text
+  itDecision      String?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+
+  asset       Asset  @relation(fields: [assetId], references: [id])
+  receptor    User   @relation("ActaReceptor", fields: [receptorId], references: [id])
+  firmante    User   @relation("ActaFirmante", fields: [firmanteId], references: [id])
+  relatedActa Acta?  @relation("ActaRelacion", fields: [relatedActaId], references: [id])
+  actasHijas  Acta[] @relation("ActaRelacion")
+
+  @@index([assetId])
+  @@index([receptorId])
+  @@index([type])
+  @@map("actas")
+}
+
+model Ticket {
+  id           String         @id @default(cuid())
+  number       String         @unique
+  title        String
+  description  String         @db.Text
+  status       TicketStatus   @default(OPEN)
+  priority     TicketPriority @default(MEDIUM)
+  category     TicketCategory @default(TECH_SUPPORT)
+  createdById  String
+  assignedToId String?
+  assetId      String?
+  dueAt        DateTime?
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  slaBreached  Boolean        @default(false)
+  csatScore    Int?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  createdBy  User            @relation("TicketCreatedBy", fields: [createdById], references: [id])
+  assignedTo User?           @relation("TicketAssignedTo", fields: [assignedToId], references: [id])
+  comments   TicketComment[]
+  csat       CsatResponse?
+
+  @@index([status])
+  @@index([priority])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([dueAt])
+  @@map("tickets")
+}
+
+model TicketComment {
+  id         String    @id @default(cuid())
+  ticketId   String
+  authorId   String
+  body       String    @db.Text
+  isInternal Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([ticketId])
+  @@map("ticket_comments")
+}
+
+model CsatResponse {
+  id        String   @id @default(cuid())
+  ticketId  String   @unique
+  userId    String
+  score     Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("csat_responses")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String?
+  action     AuditAction
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  title      String
+  body       String
+  type       String
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}

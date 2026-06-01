@@ -1,0 +1,107 @@
+version: "3.9"
+
+# TechOpsHub — Docker Compose (Mac M2 / ARM64)
+# Levanta: PostgreSQL 16 + Backend (Node 20) + Frontend (Vite) + Nginx
+
+services:
+  # ─────────────────────────────────────────────
+  # Base de datos
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/arm64
+    container_name: techops_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: techops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: techopshub
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techops -d techopshub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - techops_net
+
+  # ─────────────────────────────────────────────
+  # Backend (Node.js + Express)
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
+    container_name: techops_backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://techops:${POSTGRES_PASSWORD}@postgres:5432/techopshub
+      NODE_ENV: ${NODE_ENV:-development}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - uploads_data:/app/uploads
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - techops_net
+    command: npm run dev
+
+  # ─────────────────────────────────────────────
+  # Frontend (React + Vite)
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
+    container_name: techops_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - techops_net
+    command: npm run dev -- --host 0.0.0.0
+
+  # ─────────────────────────────────────────────
+  # Proxy reverso
+  # ─────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    platform: linux/arm64
+    container_name: techops_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - techops_net
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  techops_net:
+    driver: bridge
