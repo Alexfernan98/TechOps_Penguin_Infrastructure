@@ -23,16 +23,26 @@ passport.use(
         let user = await prisma.user.findUnique({ where: { googleId: profile.id } });
 
         if (!user) {
-          // Primer login — crear usuario con rol EMPLOYEE por defecto
-          user = await prisma.user.create({
-            data: {
-              googleId:  profile.id,
-              email,
-              name:      profile.displayName,
-              avatarUrl: profile.photos?.[0]?.value ?? null,
-              role:      'EMPLOYEE',
-            },
-          });
+          // Buscar por email (puede ser un usuario pre-creado por el seed)
+          const byEmail = await prisma.user.findUnique({ where: { email } });
+          if (byEmail) {
+            // Vincular la cuenta Google al usuario existente
+            user = await prisma.user.update({
+              where: { email },
+              data:  { googleId: profile.id, avatarUrl: profile.photos?.[0]?.value ?? byEmail.avatarUrl },
+            });
+          } else {
+            // Primer login sin registro previo — crear con rol EMPLOYEE
+            user = await prisma.user.create({
+              data: {
+                googleId:  profile.id,
+                email,
+                name:      profile.displayName,
+                avatarUrl: profile.photos?.[0]?.value ?? null,
+                role:      'EMPLOYEE',
+              },
+            });
+          }
         } else {
           // Actualizar avatar y fecha de último login
           user = await prisma.user.update({
