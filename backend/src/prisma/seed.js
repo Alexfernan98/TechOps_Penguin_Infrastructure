@@ -1,5 +1,6 @@
 const prisma = require('../../prisma/client');
 const SEED_USERS = require('./seed-users.json');
+const { computeDueDates } = require('../services/sla');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Catálogos (alineados a §16 del desarrollo.md y al prototipo)
@@ -150,6 +151,21 @@ const ASSETS_CSV = [
 const or = (v) => (v == null || v === '' ? null : v);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tickets de demo (7 reales del contexto — desarrollo.md §10.4)
+// daysAgo = antigüedad del ticket (para variar el estado de SLA en la demo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SEED_TICKETS = [
+  { number: 'TK-2026-0001', title: 'VPN no conecta desde casa',           description: 'No puedo establecer la VPN corporativa desde mi red doméstica. El cliente se queda en "Conectando…".', priority: 'HIGH',     category: 'CONNECTIVITY',       status: 'IN_PROGRESS', daysAgo: 0,  assign: true,  comment: { body: 'Estamos revisando la configuración del firewall perimetral.', internal: false }, note: 'Posible bloqueo de puerto UDP 1194 en el ISP del usuario.' },
+  { number: 'TK-2026-0002', title: 'Monitor SCADA parpadea',              description: 'El monitor de la estación SCADA parpadea de forma intermitente, dificulta el monitoreo.', priority: 'CRITICAL', category: 'TECH_SUPPORT',       status: 'OPEN',        daysAgo: 0,  assign: false },
+  { number: 'TK-2026-0003', title: 'Solicitud de teclado nuevo',          description: 'Mi teclado tiene varias teclas que no responden. Solicito reemplazo.', priority: 'LOW',      category: 'EQUIPMENT_REQUEST',  status: 'ASSIGNED',    daysAgo: 1,  assign: true },
+  { number: 'TK-2026-0004', title: 'Reset de contraseña de dominio',       description: 'Olvidé mi contraseña y quedé bloqueado tras varios intentos.', priority: 'MEDIUM',   category: 'ACCESS_PERMISSIONS', status: 'RESOLVED',    daysAgo: 2,  assign: true },
+  { number: 'TK-2026-0005', title: 'Instalación de antivirus corporativo', description: 'Equipo nuevo sin el antivirus de la empresa instalado.', priority: 'MEDIUM',   category: 'SOFTWARE',           status: 'CLOSED',      daysAgo: 5,  assign: true },
+  { number: 'TK-2026-0006', title: 'Lentitud de red en Networking',       description: 'La red del área de Networking está muy lenta desde esta mañana.', priority: 'HIGH',     category: 'CONNECTIVITY',       status: 'PENDING_USER', daysAgo: 1, assign: true },
+  { number: 'TK-2026-0007', title: 'Permisos de acceso RDP',              description: 'Necesito acceso RDP al servidor de monitoreo para tareas de mantenimiento.', priority: 'LOW',      category: 'ACCESS_PERMISSIONS', status: 'OPEN',        daysAgo: 3,  assign: false },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -276,6 +292,50 @@ async function main() {
   }
 
   console.log(`   ✅ ${created} creados, 🔄 ${updated} actualizados, 🔗 ${assigned} asignaciones, ⚠️  ${skippedAssign} sin destinatario`);
+
+  // 6. Tickets de demo
+  console.log('\n🎫 Tickets de demo...');
+  const allUsers = await prisma.user.findMany({ select: { id: true, role: true } });
+  const techs     = allUsers.filter(u => ['IT_TECH', 'IT_ADMIN', 'SUPER_ADMIN'].includes(u.role));
+  const employees = allUsers.filter(u => u.role === 'EMPLOYEE');
+  const pick = (arr, i) => arr.length ? arr[i % arr.length] : null;
+  let ticketsCreated = 0;
+
+  for (const [i, t] of SEED_TICKETS.entries()) {
+    const exists = await prisma.ticket.findUnique({ where: { number: t.number } });
+    if (exists) continue;
+
+    const requester = pick(employees.length ? employees : allUsers, i);
+    const assignee  = t.assign ? pick(techs, i) : null;
+    if (!requester) break;
+
+    const createdAt  = new Date(Date.now() - (t.daysAgo || 0) * 86400000);
+    const { resolveDue } = computeDueDates(t.priority, createdAt);
+    const resolvedAt = ['RESOLVED', 'CLOSED'].includes(t.status) ? new Date(createdAt.getTime() + 3600000) : null;
+
+    const ticket = await prisma.ticket.create({
+      data: {
+        number: t.number, title: t.title, description: t.description,
+        priority: t.priority, category: t.category, status: t.status,
+        createdById: requester.id, assignedToId: assignee?.id ?? null,
+        createdAt, dueAt: resolveDue, resolvedAt,
+        closedAt: t.status === 'CLOSED' ? new Date(createdAt.getTime() + 7200000) : null,
+        csatScore: t.status === 'CLOSED' ? 5 : null,
+      },
+    });
+    if (t.comment && assignee) {
+      await prisma.ticketComment.create({ data: { ticketId: ticket.id, authorId: assignee.id, body: t.comment.body, isInternal: t.comment.internal } });
+    }
+    if (t.note && assignee) {
+      await prisma.ticketComment.create({ data: { ticketId: ticket.id, authorId: assignee.id, body: t.note, isInternal: true } });
+    }
+    if (t.status === 'CLOSED') {
+      await prisma.csatResponse.create({ data: { ticketId: ticket.id, userId: requester.id, score: 5 } });
+    }
+    ticketsCreated++;
+  }
+  console.log(`   ✅ ${ticketsCreated} tickets de demo`);
+
   console.log('\n✅ Seed completado.\n');
 }
 

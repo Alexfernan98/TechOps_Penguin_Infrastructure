@@ -45,6 +45,18 @@ router.get('/', authenticate, requireRole('IT_ADMIN'), async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
+// ── GET /users/pick (lista mínima para selectores; IT_TECH+ para asignar) ──────
+router.get('/pick', authenticate, requireRole('IT_TECH'), async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { deletedAt: null, isActive: true },
+      select: { id: true, name: true, nameFirst: true, nameLast: true, email: true, ci: true, role: true, generic: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json({ users });
+  } catch (err) { next(err); }
+});
+
 // ── GET /users/:id ────────────────────────────────────────────────────────────
 router.get('/:id', authenticate, async (req, res, next) => {
   try {

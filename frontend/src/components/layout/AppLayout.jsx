@@ -3,13 +3,14 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 
 const PAGE_TITLES = {
-  '/dashboard': 'Dashboard',
-  '/assets':    'Inventario de Activos',
-  '/tickets':   'Tickets',
-  '/actas':     'Actas de Entrega',
-  '/users':     'Usuarios',
-  '/audit':     'Auditoría',
-  '/config':    'Configuración',
+  '/dashboard':      'Dashboard',
+  '/assets':         'Inventario de Activos',
+  '/tickets':        'Tickets',
+  '/actas':          'Actas de Entrega',
+  '/notificaciones': 'Notificaciones',
+  '/users':          'Usuarios',
+  '/audit':          'Auditoría',
+  '/config':         'Configuración',
 };
 
 export default function AppLayout() {
