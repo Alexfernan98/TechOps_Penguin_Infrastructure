@@ -53,16 +53,29 @@ export default function AssetsPage() {
   const reloadLists = useCallback(async () => {
     try {
       const [c, l, d, u, w] = await Promise.all([
-        categoriesApi.list(), locationsApi.list(), departmentsApi.list(),
-        usersApi.pick().catch(() => []), assetsApi.warrantyAlerts().catch(() => ({ assets: [], count: 0 })),
+        categoriesApi.list().catch(() => []),
+        locationsApi.list().catch(() => []),
+        departmentsApi.list().catch(() => []),
+        usersApi.pick().catch(() => []),
+        assetsApi.warrantyAlerts().catch(() => ({ assets: [], count: 0 })),
       ]);
-      setCats(c); setLocs(l); setDepts(d); setUsers(u); setWarranty(w);
+      setCats(Array.isArray(c) ? c : []);
+      setLocs(Array.isArray(l) ? l : []);
+      setDepts(Array.isArray(d) ? d : []);
+      setUsers(Array.isArray(u) ? u : []);
+      setWarranty(w && typeof w === 'object' ? { assets: w.assets || [], count: w.count || 0 } : { assets: [], count: 0 });
     } catch (e) { /* catálogos opcionales */ }
   }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try { setData(await assetsApi.list(params)); }
+    try {
+      const d = await assetsApi.list(params);
+      setData({
+        assets: Array.isArray(d?.assets) ? d.assets : [],
+        pagination: d?.pagination || { page: 1, perPage: 15, total: 0, totalPages: 1 },
+      });
+    }
     catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setLoading(false); }
   }, [params]);

@@ -186,6 +186,28 @@ function UserDrawer({ user, depts, me, onClose, onSaved }) {
     finally { setBusy(false); }
   };
 
+  const remove = async () => {
+    const msg = `¿Eliminar definitivamente a ${user.name}?\n\n` +
+                `Esta acción no se puede deshacer. Si el usuario tiene actividad ` +
+                `histórica (activos asignados, tickets, actas), el sistema lo bloqueará ` +
+                `y te sugerirá desactivar en su lugar.`;
+    if (!window.confirm(msg)) return;
+    setBusy(true); setErr(null);
+    try {
+      await usersApi.remove(user.id);
+      onSaved();
+    } catch (e) {
+      const data = e.response?.data;
+      let text = data?.error || e.message;
+      if (Array.isArray(data?.blockers) && data.blockers.length) {
+        text += '\n\n• ' + data.blockers.join('\n• ') + (data.suggestion ? `\n\n${data.suggestion}` : '');
+      }
+      setErr(text);
+    } finally { setBusy(false); }
+  };
+
+  const canDelete = me?.role === 'SUPER_ADMIN' && user.id !== me?.id;
+
   return (
     <Drawer
       open={!!user}
@@ -194,17 +216,29 @@ function UserDrawer({ user, depts, me, onClose, onSaved }) {
       subtitle={user.email}
       footer={
         <div className="flex items-center justify-between gap-2">
-          <button
-            onClick={toggleActive}
-            disabled={busy || user.id === me?.id}
-            className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 ${
-              user.isActive
-                ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
-                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-            }`}
-          >
-            {user.isActive ? 'Desactivar' : 'Reactivar'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={toggleActive}
+              disabled={busy || user.id === me?.id}
+              className={`px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 ${
+                user.isActive
+                  ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+              }`}
+            >
+              {user.isActive ? 'Desactivar' : 'Reactivar'}
+            </button>
+            {canDelete && (
+              <button
+                onClick={remove}
+                disabled={busy}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                title="Borrado definitivo. Solo si el usuario no tiene actividad histórica."
+              >
+                Eliminar
+              </button>
+            )}
+          </div>
           <button onClick={save} disabled={busy} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">
             Guardar cambios
           </button>
@@ -221,7 +255,7 @@ function UserDrawer({ user, depts, me, onClose, onSaved }) {
           </div>
         </div>
 
-        {err && <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">{err}</div>}
+        {err && <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700 whitespace-pre-wrap">{err}</div>}
 
         <section>
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Identidad y acceso</h3>

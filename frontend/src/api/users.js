@@ -9,4 +9,5 @@ export const usersApi = {
   deactivate: (id)          => api.patch(`/users/${id}/deactivate`).then(r => r.data.user),
   invite:     (body)        => api.post('/users/invite', body).then(r => r.data.user),
   import:     (rows)        => api.post('/users/import', { rows }).then(r => r.data),
+  remove:     (id)          => api.delete(`/users/${id}`).then(r => r.data),
 };

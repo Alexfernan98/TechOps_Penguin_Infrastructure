@@ -133,6 +133,57 @@ router.patch('/:id/deactivate', authenticate, requireRole('IT_ADMIN'), async (re
   } catch (err) { next(err); }
 });
 
+// ── DELETE /users/:id (hard delete — solo SUPER_ADMIN) ────────────────────────
+// Elimina al usuario definitivamente. Rechaza si tiene actividad atada (assets
+// asignados activos, tickets, actas, comentarios, asignaciones históricas) para
+// no romper integridad referencial. En esos casos sugiere usar /deactivate.
+router.delete('/:id', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (id === req.user.id) return res.status(400).json({ error: 'No podés eliminar tu propia cuenta' });
+
+    const before = await prisma.user.findUnique({ where: { id }, select: USER_SELECT });
+    if (!before) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Verificar referencias que bloquearían el borrado físico.
+    const [activeAssignments, totalAssignments, createdTickets, assignedTickets,
+           actasAsReceptor, actasAsFirmante, comments] = await Promise.all([
+      prisma.assetAssignment.count({ where: { userId: id, returnedAt: null } }),
+      prisma.assetAssignment.count({ where: { userId: id } }),
+      prisma.ticket.count({ where: { createdById: id } }),
+      prisma.ticket.count({ where: { assignedToId: id } }),
+      prisma.acta.count({ where: { receptorId: id } }),
+      prisma.acta.count({ where: { firmanteId: id } }),
+      prisma.ticketComment.count({ where: { authorId: id } }),
+    ]);
+
+    const blockers = [];
+    if (activeAssignments) blockers.push(`${activeAssignments} activo(s) actualmente asignado(s)`);
+    if (totalAssignments)  blockers.push(`${totalAssignments} asignación(es) histórica(s)`);
+    if (createdTickets)    blockers.push(`${createdTickets} ticket(s) creado(s)`);
+    if (assignedTickets)   blockers.push(`${assignedTickets} ticket(s) asignado(s)`);
+    if (actasAsReceptor)   blockers.push(`${actasAsReceptor} acta(s) como receptor`);
+    if (actasAsFirmante)   blockers.push(`${actasAsFirmante} acta(s) como firmante`);
+    if (comments)          blockers.push(`${comments} comentario(s) en tickets`);
+
+    if (blockers.length > 0) {
+      return res.status(409).json({
+        error: 'No se puede eliminar el usuario porque tiene actividad histórica registrada.',
+        blockers,
+        suggestion: 'Usá "Desactivar" en su lugar — preserva la auditoría y oculta al usuario del sistema.',
+      });
+    }
+
+    // Limpiar notificaciones y desvincular AuditLog (preservando el historial).
+    await prisma.notification.deleteMany({ where: { userId: id } });
+    await prisma.auditLog.updateMany({ where: { userId: id }, data: { userId: null } });
+    await prisma.user.delete({ where: { id } });
+
+    await audit({ req, action: 'DELETE', entityType: 'User', entityId: id, before });
+    res.json({ ok: true, deleted: { id, email: before.email, name: before.name } });
+  } catch (err) { next(err); }
+});
+
 // ── PATCH /users/:id/activate ─────────────────────────────────────────────────
 router.patch('/:id/activate', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
   try {
