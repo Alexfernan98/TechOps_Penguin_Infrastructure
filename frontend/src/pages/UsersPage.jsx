@@ -33,7 +33,7 @@ export default function UsersPage() {
     setLoading(true);
     try {
       const [u, d] = await Promise.all([usersApi.list(), departmentsApi.list()]);
-      setUsers(u); setDepts(d); setError(null);
+      setUsers(Array.isArray(u) ? u : []); setDepts(Array.isArray(d) ? d : []); setError(null);
     } catch (e) {
       setError(e.response?.data?.error || e.message);
     } finally { setLoading(false); }
