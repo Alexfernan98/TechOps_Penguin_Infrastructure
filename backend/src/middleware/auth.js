@@ -19,8 +19,9 @@ async function authenticate(req, res, next) {
       where: { id: payload.sub },
       select: {
         id: true, email: true, name: true,
+        nameFirst: true, nameLast: true, ci: true,
         avatarUrl: true, role: true,
-        departmentSlug: true, isActive: true,
+        departmentSlug: true, isActive: true, generic: true,
       },
     });
 

@@ -8,6 +8,8 @@ const PAGE_TITLES = {
   '/tickets':   'Tickets',
   '/actas':     'Actas de Entrega',
   '/users':     'Usuarios',
+  '/audit':     'Auditoría',
+  '/config':    'Configuración',
 };
 
 export default function AppLayout() {

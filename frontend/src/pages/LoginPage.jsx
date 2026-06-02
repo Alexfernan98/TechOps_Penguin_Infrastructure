@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import useAuthStore from '@/store/authStore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -7,6 +7,8 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 export default function LoginPage() {
   const { user, fetchUser, loading } = useAuthStore();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const authError = searchParams.get('error');
 
   useEffect(() => {
     fetchUser();
@@ -38,9 +40,16 @@ export default function LoginPage() {
         {/* Card */}
         <div className="bg-white rounded-2xl p-8 shadow-2xl">
           <h2 className="text-xl font-semibold text-slate-800 mb-1">Iniciar sesión</h2>
-          <p className="text-slate-500 text-sm mb-8">
+          <p className="text-slate-500 text-sm mb-6">
             Acceso exclusivo para cuentas <span className="font-medium text-slate-700">@penguin.digital</span>
           </p>
+
+          {authError === 'unauthorized' && (
+            <div className="mb-5 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+              La cuenta no pertenece al dominio <span className="font-medium">@penguin.digital</span>.
+              Iniciá sesión con tu cuenta corporativa.
+            </div>
+          )}
 
           <button
             onClick={handleLogin}

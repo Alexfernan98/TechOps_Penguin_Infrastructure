@@ -28,6 +28,7 @@ enum AssetStatus {
 enum AssetCondition {
   GOOD
   FAIR
+  POOR
   DAMAGED
 }
 
@@ -69,6 +70,7 @@ enum AuditAction {
   CREATE
   UPDATE
   DELETE
+  DELETE_LOGICAL
   ASSIGN
   UNASSIGN
   STATUS_CHANGE
@@ -78,13 +80,17 @@ enum AuditAction {
 
 model User {
   id             String    @id @default(cuid())
-  googleId       String    @unique
+  googleId       String?   @unique
   email          String    @unique
   name           String
+  nameFirst      String?
+  nameLast       String?
+  ci             String?
   avatarUrl      String?
   role           Role      @default(EMPLOYEE)
   departmentSlug String?
   isActive       Boolean   @default(true)
+  generic        Boolean   @default(false)
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -205,21 +211,21 @@ model AssetAssignment {
 }
 
 model Acta {
-  id              String         @id @default(cuid())
+  id              String          @id @default(cuid())
   type            ActaType
   assetId         String
   receptorId      String
   firmanteId      String
   relatedActaId   String?
   pdfUrl          String?
-  signedAt        DateTime       @default(now())
+  signedAt        DateTime        @default(now())
   conditionBefore AssetCondition?
   conditionAfter  AssetCondition?
   daysInUse       Int?
-  observations    String?        @db.Text
+  observations    String?         @db.Text
   itDecision      String?
   metadata        Json?
-  createdAt       DateTime       @default(now())
+  createdAt       DateTime        @default(now())
 
   asset       Asset  @relation(fields: [assetId], references: [id])
   receptor    User   @relation("ActaReceptor", fields: [receptorId], references: [id])

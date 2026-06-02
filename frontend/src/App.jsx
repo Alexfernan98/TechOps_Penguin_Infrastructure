@@ -4,6 +4,8 @@ import AppLayout from '@/components/layout/AppLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
+import UsersPage from '@/pages/UsersPage';
+import ConfigPage from '@/pages/ConfigPage';
 import useAuthStore from '@/store/authStore';
 
 function ComingSoon({ title }) {
@@ -18,31 +20,36 @@ function ComingSoon({ title }) {
   );
 }
 
+function RequireRole({ roles, children }) {
+  const { user } = useAuthStore();
+  if (!user) return null;
+  if (!roles.includes(user.role)) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 export default function App() {
   const { fetchUser } = useAuthStore();
 
-  useEffect(() => {
-    fetchUser();
-  }, []);
+  useEffect(() => { fetchUser(); }, []);
 
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
 
-      <Route
-        element={
-          <ProtectedRoute>
-            <AppLayout />
-          </ProtectedRoute>
-        }
-      >
+      <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/assets/*"  element={<ComingSoon title="Inventario de Activos" />} />
         <Route path="/tickets/*" element={<ComingSoon title="Sistema de Tickets" />} />
         <Route path="/actas/*"   element={<ComingSoon title="Actas de Entrega" />} />
-        <Route path="/users/*"   element={<ComingSoon title="Usuarios" />} />
-        <Route path="*"          element={<Navigate to="/dashboard" replace />} />
+        <Route path="/audit"     element={<ComingSoon title="Auditoría" />} />
+        <Route path="/users"     element={
+          <RequireRole roles={['SUPER_ADMIN','IT_ADMIN']}><UsersPage /></RequireRole>
+        } />
+        <Route path="/config"    element={
+          <RequireRole roles={['SUPER_ADMIN']}><ConfigPage /></RequireRole>
+        } />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
   );
