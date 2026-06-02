@@ -5,18 +5,14 @@ import useAuthStore from '@/store/authStore';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export default function LoginPage() {
-  const { user, fetchUser, loading } = useAuthStore();
+  const { user, loading } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const authError = searchParams.get('error');
 
   useEffect(() => {
-    fetchUser();
-  }, []);
-
-  useEffect(() => {
     if (!loading && user) navigate('/dashboard', { replace: true });
-  }, [user, loading]);
+  }, [user, loading, navigate]);
 
   const handleLogin = () => {
     window.location.href = `${API_URL}/auth/google`;
