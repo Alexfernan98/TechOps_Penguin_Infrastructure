@@ -53,10 +53,13 @@ app.use(passport.initialize());
 // ─────────────────────────────────────────────
 // Rutas
 // ─────────────────────────────────────────────
-app.use('/auth', require('./routes/auth'));
-// app.use('/api/users',   require('./routes/users'));
-// app.use('/api/assets',  require('./routes/assets'));
-// app.use('/api/tickets', require('./routes/tickets'));
+app.use('/auth',              require('./routes/auth'));
+app.use('/users',             require('./routes/users'));
+app.use('/departments',       require('./routes/departments'));
+app.use('/locations',         require('./routes/locations'));
+app.use('/asset-categories',  require('./routes/assetCategories'));
+// app.use('/assets',  require('./routes/assets'));
+// app.use('/tickets', require('./routes/tickets'));
 
 app.get('/api', (_req, res) => {
   res.json({

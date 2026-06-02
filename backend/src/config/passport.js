@@ -20,16 +20,18 @@ passport.use(
           });
         }
 
-        let user = await prisma.user.findUnique({ where: { googleId: profile.id } });
+        let user = await prisma.user.findFirst({ where: { googleId: profile.id } });
 
         if (!user) {
-          // Buscar por email (puede ser un usuario pre-creado por el seed)
           const byEmail = await prisma.user.findUnique({ where: { email } });
           if (byEmail) {
-            // Vincular la cuenta Google al usuario existente
             user = await prisma.user.update({
               where: { email },
-              data:  { googleId: profile.id, avatarUrl: profile.photos?.[0]?.value ?? byEmail.avatarUrl },
+              data:  {
+                googleId:    profile.id,
+                avatarUrl:   profile.photos?.[0]?.value ?? byEmail.avatarUrl,
+                lastLoginAt: new Date(),
+              },
             });
           } else {
             // Primer login sin registro previo — crear con rol EMPLOYEE

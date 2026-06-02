@@ -1,33 +1,31 @@
 const prisma = require('../../prisma/client');
+const SEED_USERS = require('./seed-users.json');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Datos de referencia
+// Catálogos (alineados a §16 del desarrollo.md y al prototipo)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const LOCATIONS = [
-  { slug: 'noc',         name: 'NOC',         siteCode: 'PE1H' },
-  { slug: 'networking',  name: 'Networking',  siteCode: 'PE1H' },
-  { slug: 'mining-ops',  name: 'Mining Ops.', siteCode: 'PE1H' },
-  { slug: 'msu',         name: 'MSU',         siteCode: 'PE1H' },
+  { slug: 'NOC',         name: 'NOC',         siteCode: 'PE1H' },
+  { slug: 'NETWORKING',  name: 'Networking',  siteCode: 'PE1H' },
+  { slug: 'MINING_OPS',  name: 'Mining Ops.', siteCode: 'PE1H' },
+  { slug: 'MSU',         name: 'MSU',         siteCode: 'PE1H' },
 ];
 
 const DEPARTMENTS = [
-  { slug: 'MINING_OPS',                  name: 'Mining Ops',                   parentSlug: null,         type: 'Departamento' },
-  { slug: 'MINING_OPS_MINING_TECH',      name: 'Mining Tech',                  parentSlug: 'MINING_OPS', type: 'Equipo' },
-  { slug: 'MINING_OPS_MICROELECTRONICS', name: 'Microelectrónica',             parentSlug: 'MINING_OPS', type: 'Equipo' },
-  { slug: 'MINING_OPS_NETWORKING_CS',    name: 'Networking & Cybersecurity',   parentSlug: 'MINING_OPS', type: 'Equipo' },
-  { slug: 'MINING_OPS_SOFTWARE',         name: 'Software Development',         parentSlug: 'MINING_OPS', type: 'Equipo' },
-  { slug: 'MINING_OPS_AUTOMATION',       name: 'Automatización',               parentSlug: 'MINING_OPS', type: 'Equipo' },
-  { slug: 'MAINTENANCE',                 name: 'Mantenimiento',                parentSlug: null,         type: 'Departamento' },
-  { slug: 'MAINTENANCE_TECH',            name: 'Maintenance Tech',             parentSlug: 'MAINTENANCE', type: 'Equipo' },
-  { slug: 'MAINTENANCE_LAB',             name: 'Laboratorio',                  parentSlug: 'MAINTENANCE', type: 'Equipo' },
-  { slug: 'MAINTENANCE_SUBSTATION',      name: 'Subestación',                  parentSlug: 'MAINTENANCE', type: 'Equipo' },
-  { slug: 'FACILITIES',                  name: 'Facilities',                   parentSlug: null,         type: 'Departamento' },
-  { slug: 'FACILITIES_MSU',              name: 'MSU',                          parentSlug: 'FACILITIES', type: 'Equipo' },
-  { slug: 'FACILITIES_WAREHOUSE',        name: 'Warehouse',                    parentSlug: 'FACILITIES', type: 'Equipo' },
-  { slug: 'FACILITIES_GENERAL_SERVICES', name: 'Servicios Generales',          parentSlug: 'FACILITIES', type: 'Equipo' },
-  { slug: 'FACILITIES_SAFETY',           name: 'Safety & Occupational Health', parentSlug: null,         type: 'Departamento' },
-  { slug: 'INFRASTRUCTURE',              name: 'Infrastructure',               parentSlug: null,         type: 'Departamento' },
+  { slug: 'MINING_OPS',                  name: 'Minning Operations',          parentSlug: null,           type: 'DEPARTMENT' },
+  { slug: 'MINING_OPS_MICROELECTRONICS', name: 'MicroElectronics',            parentSlug: 'MINING_OPS',   type: 'TEAM' },
+  { slug: 'MINING_OPS_NETWORKING_CS',    name: 'Cybersecurity & Networking',  parentSlug: 'MINING_OPS',   type: 'TEAM' },
+  { slug: 'MINING_OPS_DEVELOPERS',       name: 'Developers',                  parentSlug: 'MINING_OPS',   type: 'TEAM' },
+  { slug: 'MINING_OPS_AUTOMATION',       name: 'Automation',                  parentSlug: 'MINING_OPS',   type: 'TEAM' },
+  { slug: 'FACILITY',                    name: 'Facility',                    parentSlug: null,           type: 'DEPARTMENT' },
+  { slug: 'FACILITY_MSU',                name: 'MSU',                         parentSlug: 'FACILITY',     type: 'TEAM' },
+  { slug: 'MAINTENANCE',                 name: 'Maintenance',                 parentSlug: null,           type: 'DEPARTMENT' },
+  { slug: 'PEOPLE_CULTURE',              name: 'People & Culture',            parentSlug: null,           type: 'DEPARTMENT' },
+  { slug: 'PEOPLE_CULTURE_SAFETY',       name: 'Security and Health',        parentSlug: 'PEOPLE_CULTURE', type: 'TEAM' },
+  { slug: 'WAREHOUSE',                   name: 'Warehouse',                   parentSlug: null,           type: 'DEPARTMENT' },
+  { slug: 'PROJECTS',                    name: 'Projects',                    parentSlug: null,           type: 'DEPARTMENT' },
+  { slug: 'DIRECTORY',                   name: 'Directory',                   parentSlug: null,           type: 'DEPARTMENT' },
 ];
 
 const ASSET_CATEGORIES = [
@@ -39,154 +37,56 @@ const ASSET_CATEGORIES = [
   { slug: 'printer',  name: 'Impresora',  tagPrefix: 'PE1H-IT-IMP-', icon: 'Printer' },
 ];
 
-// Usuarios del equipo IT y demás personas del CSV
-const USERS = [
-  {
-    email:     'alexis.fernandez@penguin.digital',
-    name:      'Alexis Fernandez',
-    role:      'SUPER_ADMIN',
-    googleId:  null, // ya existe via OAuth — se actualiza por email
-    dept:      'MINING_OPS_NETWORKING_CS',
-  },
-  {
-    email:     'lorenzo.martinez@penguin.digital',
-    name:      'Lorenzo Antonio Martinez Ferreira',
-    role:      'IT_TECH',
-    googleId:  'seed_lorenzo_martinez',
-    dept:      'MINING_OPS_NETWORKING_CS',
-  },
-  {
-    email:     'jose.ruizdiaz@penguin.digital',
-    name:      'Jose Mariano Ruiz Diaz Noguera',
-    role:      'IT_TECH',
-    googleId:  'seed_jose_ruizdiaz',
-    dept:      'MINING_OPS_NETWORKING_CS',
-  },
-  {
-    email:     'allan.fernandez@penguin.digital',
-    name:      'Allan Fernandez',
-    role:      'IT_ADMIN',
-    googleId:  'seed_allan_fernandez',
-    dept:      'MINING_OPS',
-  },
-  {
-    email:     'jorge.caballero@penguin.digital',
-    name:      'Jorge Caballero',
-    role:      'EMPLOYEE',
-    googleId:  'seed_jorge_caballero',
-    dept:      'MAINTENANCE',
-  },
-  {
-    email:     'ronaldo.chavez@penguin.digital',
-    name:      'Ronaldo Chavez',
-    role:      'EMPLOYEE',
-    googleId:  'seed_ronaldo_chavez',
-    dept:      'MINING_OPS',
-  },
-  {
-    email:     'carlos.obelar@penguin.digital',
-    name:      'Carlos Obelar',
-    role:      'EMPLOYEE',
-    googleId:  'seed_carlos_obelar',
-    dept:      'MINING_OPS',
-  },
-  {
-    email:     'jorge.sanchez@penguin.digital',
-    name:      'Jorge Daniel Sanchez Ramirez',
-    role:      'EMPLOYEE',
-    googleId:  'seed_jorge_sanchez',
-    dept:      'MINING_OPS_SOFTWARE',
-  },
-  // Cuentas compartidas / departamentales
-  {
-    email:     'noc.notifications@penguin.digital',
-    name:      'Penguin - NOC Notifications',
-    role:      'READ_ONLY',
-    googleId:  'seed_noc_notifications',
-    dept:      'MINING_OPS',
-  },
-  {
-    email:     'mantenimiento.dc@penguin.digital',
-    name:      'Mantenimiento Data Center - Hernandarias',
-    role:      'READ_ONLY',
-    googleId:  'seed_mantenimiento_dc',
-    dept:      'MAINTENANCE',
-  },
-  {
-    email:     'msu.hernandarias@penguin.digital',
-    name:      'Monitoring and Security Unit Hernandarias',
-    role:      'READ_ONLY',
-    googleId:  'seed_msu_hernandarias',
-    dept:      'FACILITIES_MSU',
-  },
-  {
-    email:     'networking.cs@penguin.digital',
-    name:      'Networking Ciberseguridad',
-    role:      'READ_ONLY',
-    googleId:  'seed_networking_cs',
-    dept:      'MINING_OPS_NETWORKING_CS',
-  },
-];
+// ─────────────────────────────────────────────────────────────────────────────
+// Mapeos del CSV de activos (nombres en español → enums/slugs)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// Mapeo de nombre en CSV → email del usuario
-const USER_EMAIL_BY_NAME = {
-  'Penguin - Noc Notifications':                 'noc.notifications@penguin.digital',
-  'Lorenzo Antonio Martinez Ferreira':           'lorenzo.martinez@penguin.digital',
-  'Jose Mariano Ruiz Diaz Noguera':              'jose.ruizdiaz@penguin.digital',
-  'Mantenimiento Data Center - Hernandarias':    'mantenimiento.dc@penguin.digital',
-  'Jorge Caballero':                             'jorge.caballero@penguin.digital',
-  'Monitoring and Security Unit Hernandarias':   'msu.hernandarias@penguin.digital',
-  'Allan Fernandez':                             'allan.fernandez@penguin.digital',
-  'Ronaldo Chavez':                              'ronaldo.chavez@penguin.digital',
-  'Alexis Fernandez':                            'alexis.fernandez@penguin.digital',
-  'Carlos Obelar':                               'carlos.obelar@penguin.digital',
-  'Jorge Daniel Sanchez Ramirez':               'jorge.sanchez@penguin.digital',
-  'Networking Ciberseguridad':                   'networking.cs@penguin.digital',
-};
-
-// Mapeo tipo CSV → categorySlug
 const CATEGORY_BY_TYPE = {
-  'PC':         'desktop',
-  'Monitor':    'monitor',
-  'Notebook':   'notebook',
-  'Mouse':      'mouse',
-  'Teclado':    'keyboard',
-  'Impresora':  'printer',
+  'PC': 'desktop', 'Monitor': 'monitor', 'Notebook': 'notebook',
+  'Mouse': 'mouse', 'Teclado': 'keyboard', 'Impresora': 'printer',
 };
 
-// Mapeo departamento CSV → departmentSlug
 const DEPT_BY_CSV = {
   'Mining Ops.': 'MINING_OPS',
   'Mantenimiento': 'MAINTENANCE',
-  'Facility':    'FACILITIES',
+  'Facility':    'FACILITY',
 };
 
-// Mapeo ubicación CSV → locationSlug
 const LOC_BY_CSV = {
-  'NOC':         'noc',
-  'Networking':  'networking',
-  'Mining Ops.': 'mining-ops',
-  'MsU':         'msu',
-  'MSU':         'msu',
+  'NOC':         'NOC',
+  'Networking':  'NETWORKING',
+  'Mining Ops.': 'MINING_OPS',
+  'MsU':         'MSU',
+  'MSU':         'MSU',
 };
 
-// Mapeo estado CSV → AssetStatus
 const STATUS_BY_CSV = {
-  'Asignado':   'ASSIGNED',
-  'Disponible': 'AVAILABLE',
-  'En baja':    'RETIRED',
+  'Asignado': 'ASSIGNED', 'Disponible': 'AVAILABLE', 'En baja': 'RETIRED',
 };
 
-// Mapeo condición CSV → AssetCondition
 const CONDITION_BY_CSV = {
-  'Bueno':   'GOOD',
-  'Regular': 'FAIR',
-  'Dañado':  'DAMAGED',
-  '':        'GOOD',
+  'Bueno': 'GOOD', 'Regular': 'FAIR', 'Malo': 'POOR', 'Dañado': 'DAMAGED', '': 'GOOD',
+};
+
+// Nombres como aparecen en el CSV de activos → email canónico (cuentas funcionales + casos no triviales).
+// El resto se resuelve por match exacto contra User.name.
+const NAME_OVERRIDES = {
+  'Penguin - Noc Notifications':                 'noc.notifications@penguin.digital',
+  'Mantenimiento Data Center - Hernandarias':    'mantenimiento.dc@penguin.digital',
+  'Monitoring and Security Unit Hernandarias':   'msu.hernandarias@penguin.digital',
+  'Networking Ciberseguridad':                   'networking.ciberseg@penguin.digital',
+  'Lorenzo Antonio Martinez Ferreira':           'lorenzo.martinez@penguin.digital',
+  'Jose Mariano Ruiz Diaz Noguera':              'jose.ruizdiaz@penguin.digital',
+  'Alexis Fernandez':                            'alexis.fernandez@penguin.digital',
+  'Allan Fernandez':                             'allan.fernandez@penguin.digital',
+  'Ronaldo Chavez':                              'ronaldo.chavez@penguin.digital',
+  'Carlos Obelar':                               'carlos.obelar@penguin.digital',
+  'Jorge Daniel Sanchez Ramirez':                'jorge.sanchez@penguin.digital',
+  // Jorge Caballero no figura en el organigrama oficial — se omitirá silenciosamente
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Activos del CSV (55 registros)
+// Activos del CSV (55 registros) — mantenidos del seed anterior
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ASSETS_CSV = [
@@ -247,13 +147,7 @@ const ASSETS_CSV = [
   { tag:'PE1H-IT-NB-008',  type:'Notebook',  brand:'Lenovo',    model:'20CLS3MQ03',            sn:'PC0AA4B4',              macEth:'50:7B:9D:8B:8F:B1',        macWifi:null,          os:'Windows 10 Pro',         status:'En baja',    assignedTo:null,                                      dept:'Mining Ops.', loc:'Networking',  details:'Notebook de baja por fallos ex micro',            condition:'',      notes:null },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Funciones helper
-// ─────────────────────────────────────────────────────────────────────────────
-
-function or(val) {
-  return val || null;
-}
+const or = (v) => (v == null || v === '' ? null : v);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
@@ -263,160 +157,126 @@ async function main() {
   console.log('🌱 Iniciando seed...\n');
 
   // 1. Locations
-  console.log('📍 Creando ubicaciones...');
+  console.log('📍 Ubicaciones...');
   for (const loc of LOCATIONS) {
-    await prisma.location.upsert({
-      where:  { slug: loc.slug },
-      update: { name: loc.name },
-      create: loc,
-    });
+    await prisma.location.upsert({ where: { slug: loc.slug }, update: { name: loc.name, siteCode: loc.siteCode }, create: loc });
   }
   console.log(`   ✅ ${LOCATIONS.length} ubicaciones`);
 
   // 2. Departments
-  console.log('🏢 Creando departamentos...');
+  console.log('🏢 Departamentos...');
   for (const dept of DEPARTMENTS) {
     await prisma.department.upsert({
       where:  { slug: dept.slug },
-      update: { name: dept.name },
+      update: { name: dept.name, parentSlug: dept.parentSlug, type: dept.type },
       create: dept,
     });
   }
   console.log(`   ✅ ${DEPARTMENTS.length} departamentos`);
 
   // 3. Asset categories
-  console.log('🗂️  Creando categorías de activos...');
+  console.log('🗂️  Categorías de activos...');
   for (const cat of ASSET_CATEGORIES) {
-    await prisma.assetCategory.upsert({
-      where:  { slug: cat.slug },
-      update: { name: cat.name, tagPrefix: cat.tagPrefix },
-      create: cat,
-    });
+    await prisma.assetCategory.upsert({ where: { slug: cat.slug }, update: { name: cat.name, tagPrefix: cat.tagPrefix, icon: cat.icon }, create: cat });
   }
   console.log(`   ✅ ${ASSET_CATEGORIES.length} categorías`);
 
-  // 4. Users
-  console.log('👤 Creando usuarios...');
-  const userMap = {}; // email → id
+  // 4. Users (94 del prototipo)
+  console.log('👤 Usuarios...');
+  let usersCreated = 0, usersUpdated = 0;
+  for (const u of SEED_USERS) {
+    const data = {
+      email:          u.email,
+      name:           u.name,
+      nameFirst:      u.nameFirst ?? null,
+      nameLast:       u.nameLast ?? null,
+      ci:             u.ci ?? null,
+      role:           u.role,
+      departmentSlug: u.dept ?? null,
+      generic:        !!u.generic,
+      isActive:       u.isActive !== false,
+    };
+    const result = await prisma.user.upsert({
+      where:  { email: u.email },
+      update: data,
+      create: { ...data, googleId: null }, // googleId se vincula al primer login real
+    });
+    if (result.createdAt.getTime() === result.updatedAt.getTime()) usersCreated++;
+    else usersUpdated++;
+  }
+  console.log(`   ✅ ${usersCreated} creados, ${usersUpdated} actualizados (total: ${SEED_USERS.length})`);
 
-  for (const u of USERS) {
-    if (u.googleId === null) {
-      // Alexis ya existe — solo actualizar rol y departamento
-      const existing = await prisma.user.findUnique({ where: { email: u.email } });
-      if (existing) {
-        await prisma.user.update({
-          where: { email: u.email },
-          data:  { role: u.role, departmentSlug: u.dept },
-        });
-        userMap[u.email] = existing.id;
-        console.log(`   🔄 Actualizado: ${u.name}`);
-      }
-    } else {
-      const user = await prisma.user.upsert({
-        where:  { email: u.email },
-        update: { name: u.name, role: u.role, departmentSlug: u.dept },
-        create: {
-          googleId:      u.googleId,
-          email:         u.email,
-          name:          u.name,
-          role:          u.role,
-          departmentSlug: u.dept,
-        },
-      });
-      userMap[u.email] = user.id;
-      console.log(`   ✅ ${u.name}`);
-    }
+  // Mapa nombre → email (resolución de assignedTo)
+  const dbUsers = await prisma.user.findMany({ select: { id: true, email: true, name: true } });
+  const byEmail = Object.fromEntries(dbUsers.map(u => [u.email, u]));
+  const byName  = Object.fromEntries(dbUsers.map(u => [u.name,  u]));
+
+  function resolveUser(csvName) {
+    if (!csvName) return null;
+    const override = NAME_OVERRIDES[csvName];
+    if (override && byEmail[override]) return byEmail[override];
+    if (byName[csvName]) return byName[csvName];
+    return null;
   }
 
-  // Refrescar el id de Alexis después del update
-  const alexis = await prisma.user.findUnique({ where: { email: 'alexis.fernandez@penguin.digital' } });
-  if (alexis) userMap['alexis.fernandez@penguin.digital'] = alexis.id;
+  const alexis = byEmail['alexis.fernandez@penguin.digital'];
+  if (!alexis) {
+    console.warn('⚠️  Alexis no está cargado; las asignaciones se omiten.');
+  }
 
   // 5. Assets + Assignments
-  console.log('\n💻 Importando activos...');
-  let created = 0, updated = 0, assigned = 0;
+  console.log('\n💻 Activos del CSV...');
+  let created = 0, updated = 0, assigned = 0, skippedAssign = 0;
 
   for (const row of ASSETS_CSV) {
-    const categorySlug  = CATEGORY_BY_TYPE[row.type];
+    const categorySlug   = CATEGORY_BY_TYPE[row.type];
     const departmentSlug = DEPT_BY_CSV[row.dept] ?? null;
-    const locationSlug  = LOC_BY_CSV[row.loc] ?? null;
-    const status        = STATUS_BY_CSV[row.status] ?? 'AVAILABLE';
-    const condition     = CONDITION_BY_CSV[row.condition ?? ''] ?? 'GOOD';
+    const locationSlug   = LOC_BY_CSV[row.loc] ?? null;
+    const status         = STATUS_BY_CSV[row.status] ?? 'AVAILABLE';
+    const condition      = CONDITION_BY_CSV[row.condition ?? ''] ?? 'GOOD';
+
+    const data = {
+      categorySlug,
+      brand:           or(row.brand),
+      model:           or(row.model),
+      serialNumber:    or(row.sn),
+      macEth:          or(row.macEth),
+      macWifi:         or(row.macWifi),
+      operatingSystem: or(row.os),
+      status,
+      condition,
+      departmentSlug,
+      locationSlug,
+      details:         or(row.details),
+      notes:           or(row.notes),
+    };
 
     const existing = await prisma.asset.findUnique({ where: { tag: row.tag } });
-
     if (existing) {
-      await prisma.asset.update({
-        where: { tag: row.tag },
-        data: {
-          categorySlug,
-          brand:           or(row.brand),
-          model:           or(row.model),
-          serialNumber:    or(row.sn),
-          macEth:          or(row.macEth),
-          macWifi:         or(row.macWifi),
-          operatingSystem: or(row.os),
-          status,
-          condition,
-          departmentSlug,
-          locationSlug,
-          details:         or(row.details),
-          notes:           or(row.notes),
-        },
-      });
+      await prisma.asset.update({ where: { tag: row.tag }, data });
       updated++;
     } else {
-      await prisma.asset.create({
-        data: {
-          tag: row.tag,
-          categorySlug,
-          brand:           or(row.brand),
-          model:           or(row.model),
-          serialNumber:    or(row.sn),
-          macEth:          or(row.macEth),
-          macWifi:         or(row.macWifi),
-          operatingSystem: or(row.os),
-          status,
-          condition,
-          departmentSlug,
-          locationSlug,
-          details:         or(row.details),
-          notes:           or(row.notes),
-        },
-      });
+      await prisma.asset.create({ data: { tag: row.tag, ...data } });
       created++;
     }
 
-    // Crear AssetAssignment si el activo está asignado
-    if (status === 'ASSIGNED' && row.assignedTo) {
-      const assignedEmail = USER_EMAIL_BY_NAME[row.assignedTo];
-      const userId        = assignedEmail ? userMap[assignedEmail] : null;
-      const alexisId      = userMap['alexis.fernandez@penguin.digital'];
-      const asset         = await prisma.asset.findUnique({ where: { tag: row.tag } });
+    if (status === 'ASSIGNED' && row.assignedTo && alexis) {
+      const target = resolveUser(row.assignedTo);
+      if (!target) { skippedAssign++; continue; }
 
-      if (userId && alexisId && asset) {
-        const existingAssignment = await prisma.assetAssignment.findFirst({
-          where: { assetId: asset.id, returnedAt: null },
+      const asset = await prisma.asset.findUnique({ where: { tag: row.tag } });
+      const open  = await prisma.assetAssignment.findFirst({ where: { assetId: asset.id, returnedAt: null } });
+      if (!open) {
+        await prisma.assetAssignment.create({
+          data: { assetId: asset.id, userId: target.id, assignedById: alexis.id },
         });
-        if (!existingAssignment) {
-          await prisma.assetAssignment.create({
-            data: {
-              assetId:      asset.id,
-              userId,
-              assignedById: alexisId,
-            },
-          });
-          assigned++;
-        }
+        assigned++;
       }
     }
   }
 
-  console.log(`   ✅ ${created} activos creados`);
-  console.log(`   🔄 ${updated} activos actualizados`);
-  console.log(`   🔗 ${assigned} asignaciones registradas`);
-
-  console.log('\n✅ Seed completado exitosamente.');
+  console.log(`   ✅ ${created} creados, 🔄 ${updated} actualizados, 🔗 ${assigned} asignaciones, ⚠️  ${skippedAssign} sin destinatario`);
+  console.log('\n✅ Seed completado.\n');
 }
 
 main()
