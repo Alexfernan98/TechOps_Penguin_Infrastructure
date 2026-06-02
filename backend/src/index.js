@@ -17,8 +17,16 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+// CORS: acepta localhost y cualquier IP de red local privada (RFC1918) para que
+// otros equipos en la LAN puedan usar la app sin reconfigurar.
+const LOCAL_NET_RE = /^https?:\/\/(localhost|127\.0\.0\.1|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2})(:\d+)?$/;
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // mobile apps, curl, same-origin
+    if (LOCAL_NET_RE.test(origin)) return cb(null, true);
+    if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return cb(null, true);
+    return cb(new Error(`Origen no permitido por CORS: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
