@@ -492,3 +492,84 @@ function ActaOfferModal({ seed, onClose }) {
     </Modal>
   );
 }
+
+// ─── ImportModal (importación masiva de activos por CSV) ───────────────────────
+function ImportModal({ open, onClose, onDone }) {
+  const [text, setText]   = useState('');
+  const [busy, setBusy]   = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr]     = useState(null);
+
+  useEffect(() => { if (open) { setText(''); setResult(null); setErr(null); } }, [open]);
+
+  const parseCsv = (raw) => {
+    const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim());
+    return lines.slice(1).map(line => {
+      const cells = line.split(',').map(c => c.trim());
+      const row = {};
+      headers.forEach((h, i) => { row[h] = cells[i] ?? ''; });
+      return row;
+    });
+  };
+
+  const submit = async () => {
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const rows = parseCsv(text);
+      if (rows.length === 0) throw new Error('No se detectaron filas (verificá que el CSV tenga encabezados y datos).');
+      const r = await assetsApi.import(rows);
+      setResult(r);
+      toast.success(`Import OK: ${r.created || 0} creados · ${r.updated || 0} actualizados`);
+      onDone?.();
+    } catch (e) { setErr(e.response?.data?.error || e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Importar activos (CSV)" width={680}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cerrar</button>
+          {!result && <button onClick={submit} disabled={busy || !text.trim()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Procesar CSV</button>}
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
+          Si el <strong>TAG</strong> existe, se <strong>actualiza</strong>. Si no existe, se <strong>crea</strong>.
+          Se validan TAG único, SN único y formato de MAC. Cada fila genera un evento de auditoría.
+          <br /><br />
+          Columnas reconocidas: <code className="text-xs font-mono">tag, categorySlug, brand, model, serialNumber, macWifi, macEth, operatingSystem, status, condition, departmentSlug, locationSlug, vendor, purchaseDate, warrantyUntil, details, notes</code>.
+        </div>
+
+        {err && <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700 whitespace-pre-wrap">{err}</div>}
+
+        {result ? (
+          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">
+            <p className="font-medium">Importación completada</p>
+            <ul className="mt-2 space-y-0.5 text-emerald-700">
+              <li>Creados: <strong>{result.created || 0}</strong></li>
+              <li>Actualizados: <strong>{result.updated || 0}</strong></li>
+              <li>Omitidos: <strong>{result.skipped || 0}</strong></li>
+              {Array.isArray(result.errors) && result.errors.length > 0 && (
+                <li className="text-rose-700">Errores: <strong>{result.errors.length}</strong> (revisar logs)</li>
+              )}
+            </ul>
+          </div>
+        ) : (
+          <Field label="Pegá acá el contenido del CSV (con encabezados en la primera fila)">
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={10}
+              placeholder="tag,categorySlug,brand,model,serialNumber,...&#10;PE1H-IT-PC-100,desktop,Dell,Optiplex,SN123,..."
+              className={`${inputCls} font-mono text-xs`}
+            />
+          </Field>
+        )}
+      </div>
+    </Modal>
+  );
+}
