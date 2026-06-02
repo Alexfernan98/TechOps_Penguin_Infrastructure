@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import useAuthStore from '@/store/authStore';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// Usa el mismo origen del browser por defecto (nginx enruta /auth al backend).
+// Así funciona desde cualquier IP de la LAN sin reconfigurar.
+const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
 
 export default function LoginPage() {
   const { user, loading } = useAuthStore();

@@ -1,8 +1,10 @@
 import axios from 'axios';
 
-// El frontend habla directo con el backend (mismo esquema que LoginPage).
-// En dev: http://localhost:4000 · en prod: el origen configurado en VITE_API_URL.
-export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// El frontend habla al MISMO ORIGEN del browser por defecto: nginx (puerto 80)
+// enruta /auth, /users, /assets, etc. al backend. Eso permite que cualquier
+// equipo de la LAN acceda con su propia IP sin reconfigurar URLs.
+// VITE_API_URL solo se usa si está explícitamente seteado (override en build).
+export const API_BASE = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
 
 // Helper para URLs que usan el navegador directo (window.open, iframe, <a download>).
 export const apiUrl = (path) => `${API_BASE}${path}`;
