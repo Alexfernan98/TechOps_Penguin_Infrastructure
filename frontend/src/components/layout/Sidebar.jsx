@@ -1,21 +1,22 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Monitor, Ticket, FileText, Users, ShieldCheck, Settings } from 'lucide-react';
+import { LayoutDashboard, Monitor, Ticket, FileText, Bell, Users, ShieldCheck, Settings } from 'lucide-react';
 import useAuthStore from '@/store/authStore';
 import clsx from 'clsx';
 
 const ROUTES_BY_ROLE = {
-  SUPER_ADMIN: ['dashboard', 'assets', 'tickets', 'actas', 'users', 'audit', 'config'],
-  IT_ADMIN:    ['dashboard', 'assets', 'tickets', 'actas', 'users', 'audit', 'config'],
-  IT_TECH:     ['dashboard', 'assets', 'tickets', 'actas'],
-  EMPLOYEE:    ['dashboard', 'tickets', 'actas'],
-  READ_ONLY:   ['dashboard', 'assets', 'tickets', 'actas', 'audit'],
+  SUPER_ADMIN: ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
+  IT_ADMIN:    ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
+  IT_TECH:     ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones'],
+  EMPLOYEE:    ['dashboard', 'tickets', 'actas', 'notificaciones'],
+  READ_ONLY:   ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'audit'],
 };
 
 const NAV_ITEMS = [
-  { key: 'dashboard', to: '/dashboard', label: 'Dashboard',  icon: LayoutDashboard },
-  { key: 'assets',    to: '/assets',    label: 'Inventario', icon: Monitor },
-  { key: 'tickets',   to: '/tickets',   label: 'Tickets',    icon: Ticket },
-  { key: 'actas',     to: '/actas',     label: 'Actas',      icon: FileText },
+  { key: 'dashboard',      to: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
+  { key: 'assets',         to: '/assets',         label: 'Inventario',     icon: Monitor },
+  { key: 'tickets',        to: '/tickets',        label: 'Tickets',        icon: Ticket },
+  { key: 'actas',          to: '/actas',          label: 'Actas',          icon: FileText },
+  { key: 'notificaciones', to: '/notificaciones', label: 'Notificaciones', icon: Bell },
 ];
 
 const ADMIN_ITEMS = [
@@ -84,7 +85,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="px-6 py-4 border-t border-slate-700/50">
-        <p className="text-xs text-slate-500">v0.1.0 — Fase 0</p>
+        <p className="text-xs text-slate-500">v0.5.0 — Fases 0-5</p>
       </div>
     </aside>
   );

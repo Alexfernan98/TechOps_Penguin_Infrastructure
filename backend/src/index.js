@@ -58,8 +58,15 @@ app.use('/users',             require('./routes/users'));
 app.use('/departments',       require('./routes/departments'));
 app.use('/locations',         require('./routes/locations'));
 app.use('/asset-categories',  require('./routes/assetCategories'));
-// app.use('/assets',  require('./routes/assets'));
-// app.use('/tickets', require('./routes/tickets'));
+app.use('/assets',            require('./routes/assets'));
+app.use('/actas',             require('./routes/actas'));
+app.use('/tickets',           require('./routes/tickets'));
+app.use('/notifications',     require('./routes/notifications'));
+app.use('/audit',             require('./routes/audit'));
+app.use('/dashboard',         require('./routes/dashboard'));
+
+// Archivos subidos (PDFs de actas firmadas) — servidos estáticamente
+app.use('/uploads', express.static(require('path').join(__dirname, '../uploads')));
 
 app.get('/api', (_req, res) => {
   res.json({
@@ -92,6 +99,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 TechOpsHub API corriendo en http://localhost:${PORT}`);
   console.log(`📋 Entorno: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🏥 Health check: http://localhost:${PORT}/health\n`);
+  require('./services/cron').startCron();
 });
 
 module.exports = app;

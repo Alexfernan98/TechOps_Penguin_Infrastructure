@@ -4,21 +4,14 @@ import AppLayout from '@/components/layout/AppLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
+import AssetsPage from '@/pages/AssetsPage';
+import ActasPage from '@/pages/ActasPage';
+import TicketsPage from '@/pages/TicketsPage';
+import NotificationsPage from '@/pages/NotificationsPage';
+import AuditPage from '@/pages/AuditPage';
 import UsersPage from '@/pages/UsersPage';
 import ConfigPage from '@/pages/ConfigPage';
 import useAuthStore from '@/store/authStore';
-
-function ComingSoon({ title }) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-      <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-        <span className="text-2xl">🚧</span>
-      </div>
-      <p className="text-slate-700 font-medium">{title}</p>
-      <p className="text-slate-400 text-sm mt-1">Módulo en desarrollo</p>
-    </div>
-  );
-}
 
 function RequireRole({ roles, children }) {
   const { user } = useAuthStore();
@@ -39,14 +32,19 @@ export default function App() {
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/assets/*"  element={<ComingSoon title="Inventario de Activos" />} />
-        <Route path="/tickets/*" element={<ComingSoon title="Sistema de Tickets" />} />
-        <Route path="/actas/*"   element={<ComingSoon title="Actas de Entrega" />} />
-        <Route path="/audit"     element={<ComingSoon title="Auditoría" />} />
-        <Route path="/users"     element={
-          <RequireRole roles={['SUPER_ADMIN','IT_ADMIN']}><UsersPage /></RequireRole>
+        <Route path="/tickets"   element={<TicketsPage />} />
+        <Route path="/actas"     element={<ActasPage />} />
+        <Route path="/notificaciones" element={<NotificationsPage />} />
+        <Route path="/assets" element={
+          <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN', 'IT_TECH', 'READ_ONLY']}><AssetsPage /></RequireRole>
         } />
-        <Route path="/config"    element={
+        <Route path="/audit" element={
+          <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN', 'READ_ONLY']}><AuditPage /></RequireRole>
+        } />
+        <Route path="/users" element={
+          <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN']}><UsersPage /></RequireRole>
+        } />
+        <Route path="/config" element={
           <RequireRole roles={['SUPER_ADMIN']}><ConfigPage /></RequireRole>
         } />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
