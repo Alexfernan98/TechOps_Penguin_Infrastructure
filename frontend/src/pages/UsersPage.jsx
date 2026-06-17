@@ -6,6 +6,7 @@ import Drawer from '@/components/ui/Drawer';
 import Modal from '@/components/ui/Modal';
 import Avatar, { shortName } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import useAuthStore from '@/store/authStore';
 
 const ROLES = ['SUPER_ADMIN', 'IT_ADMIN', 'IT_TECH', 'EMPLOYEE', 'READ_ONLY'];
@@ -148,6 +149,7 @@ export default function UsersPage() {
 }
 
 function UserDrawer({ user, depts, me, onClose, onSaved }) {
+  const confirm = useConfirm();
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState(null);
@@ -187,11 +189,15 @@ function UserDrawer({ user, depts, me, onClose, onSaved }) {
   };
 
   const remove = async () => {
-    const msg = `¿Eliminar definitivamente a ${user.name}?\n\n` +
-                `Esta acción no se puede deshacer. Si el usuario tiene actividad ` +
-                `histórica (activos asignados, tickets, actas), el sistema lo bloqueará ` +
-                `y te sugerirá desactivar en su lugar.`;
-    if (!window.confirm(msg)) return;
+    const ok = await confirm({
+      title: `¿Eliminar definitivamente a ${user.name}?`,
+      description:
+        'Esta acción no se puede deshacer. Si el usuario tiene actividad histórica ' +
+        '(activos asignados, tickets, actas), el sistema lo bloqueará y te sugerirá desactivar en su lugar.',
+      confirmLabel: 'Eliminar',
+      tone: 'danger',
+    });
+    if (!ok) return;
     setBusy(true); setErr(null);
     try {
       await usersApi.remove(user.id);

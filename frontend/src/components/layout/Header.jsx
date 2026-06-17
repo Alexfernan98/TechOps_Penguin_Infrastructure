@@ -68,7 +68,7 @@ export default function Header({ title, onToggleSidebar }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-20 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 gap-3">
+    <header className="sticky top-0 z-20 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700/50 flex items-center justify-between px-4 md:px-6 flex-shrink-0 gap-3">
       <div className="flex items-center gap-2 min-w-0">
         <button
           onClick={onToggleSidebar}

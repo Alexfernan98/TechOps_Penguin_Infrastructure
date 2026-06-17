@@ -14,7 +14,7 @@ export default function Drawer({ open, onClose, title, subtitle, children, foote
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
       <div
-        className="absolute top-0 right-0 h-full bg-white shadow-2xl flex flex-col"
+        className="absolute top-0 right-0 h-full bg-white dark:bg-slate-800 dark:border-l dark:border-slate-700 shadow-2xl flex flex-col"
         style={{ width: `${width}px`, maxWidth: '100%' }}
       >
         <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between flex-shrink-0">
