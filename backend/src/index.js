@@ -17,13 +17,17 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// CORS: acepta localhost y cualquier IP de red local privada (RFC1918) para que
-// otros equipos en la LAN puedan usar la app sin reconfigurar.
+// CORS: acepta localhost, IPs de red local privada (RFC1918), y los wildcards
+// DNS para on-premise (nip.io / sslip.io / traefik.me) que resuelven a IPs
+// locales. Necesario porque Google OAuth no acepta IPs como Authorized origins
+// y forzamos un TLD válido vía nip.io.
 const LOCAL_NET_RE = /^https?:\/\/(localhost|127\.0\.0\.1|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2})(:\d+)?$/;
+const WILDCARD_DNS_RE = /^https?:\/\/[a-z0-9.-]+\.(nip\.io|sslip\.io|traefik\.me)(:\d+)?$/i;
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true); // mobile apps, curl, same-origin
-    if (LOCAL_NET_RE.test(origin)) return cb(null, true);
+    if (LOCAL_NET_RE.test(origin))     return cb(null, true);
+    if (WILDCARD_DNS_RE.test(origin))  return cb(null, true);
     if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return cb(null, true);
     return cb(new Error(`Origen no permitido por CORS: ${origin}`));
   },
@@ -61,17 +65,21 @@ app.use(passport.initialize());
 // ─────────────────────────────────────────────
 // Rutas
 // ─────────────────────────────────────────────
-app.use('/auth',              require('./routes/auth'));
-app.use('/users',             require('./routes/users'));
-app.use('/departments',       require('./routes/departments'));
-app.use('/locations',         require('./routes/locations'));
-app.use('/asset-categories',  require('./routes/assetCategories'));
-app.use('/assets',            require('./routes/assets'));
-app.use('/actas',             require('./routes/actas'));
-app.use('/tickets',           require('./routes/tickets'));
-app.use('/notifications',     require('./routes/notifications'));
-app.use('/audit',             require('./routes/audit'));
-app.use('/dashboard',         require('./routes/dashboard'));
+// ─────────────────────────────────────────────
+// Rutas REST → prefijo /api para no colisionar con rutas del SPA frontend.
+// (Sin prefijo, navegar a /assets en el browser devolvía JSON del backend.)
+// ─────────────────────────────────────────────
+app.use('/auth',                  require('./routes/auth'));          // sin /api: OAuth callback URL es fija en Google Console
+app.use('/api/users',             require('./routes/users'));
+app.use('/api/departments',       require('./routes/departments'));
+app.use('/api/locations',         require('./routes/locations'));
+app.use('/api/asset-categories',  require('./routes/assetCategories'));
+app.use('/api/assets',            require('./routes/assets'));
+app.use('/api/actas',             require('./routes/actas'));
+app.use('/api/tickets',           require('./routes/tickets'));
+app.use('/api/notifications',     require('./routes/notifications'));
+app.use('/api/audit',             require('./routes/audit'));
+app.use('/api/dashboard',         require('./routes/dashboard'));
 
 // Archivos subidos (PDFs de actas firmadas) — servidos estáticamente
 app.use('/uploads', express.static(require('path').join(__dirname, '../uploads')));

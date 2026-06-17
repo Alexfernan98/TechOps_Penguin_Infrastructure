@@ -9,6 +9,12 @@ const { notify } = require('../services/notify');
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+const BARCODE_RE = /^\d{6}$/;
+
+function normalizeBarcode(v) {
+  if (v == null || v === '') return null;
+  return String(v).trim().padStart(6, '0').slice(-6); // permite ingresar "700" → "000700"
+}
 const STATUS_VALUES    = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
 const CONDITION_VALUES = ['GOOD', 'FAIR', 'POOR', 'DAMAGED'];
 
@@ -76,6 +82,21 @@ router.get('/warranty-alerts', authenticate, async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── GET /assets/by-barcode/:code (lookup directo desde el scanner) ─────────────
+// Devuelve el activo (con el mismo shape que GET /:id) o 404. Usado por la app
+// móvil/scanner para abrir un activo conocido a partir de su etiqueta física.
+router.get('/by-barcode/:code', authenticate, async (req, res, next) => {
+  try {
+    const code = normalizeBarcode(req.params.code);
+    if (!code || !BARCODE_RE.test(code)) {
+      return res.status(400).json({ error: 'Código de barras inválido (deben ser 6 dígitos)' });
+    }
+    const asset = await prisma.asset.findUnique({ where: { barcode: code }, include: ASSET_INCLUDE });
+    if (!asset) return res.status(404).json({ error: 'No hay activo con ese código', code });
+    res.json({ asset: shape(asset) });
+  } catch (err) { next(err); }
+});
+
 // ── GET /assets/export (CSV con filtros aplicados) ─────────────────────────────
 router.get('/export', authenticate, requireRole('IT_TECH'), async (req, res, next) => {
   try {
@@ -117,6 +138,7 @@ function buildWhere(req) {
     const s = String(search);
     where.OR = [
       { tag:          { contains: s, mode: 'insensitive' } },
+      { barcode:      { contains: s } },
       { brand:        { contains: s, mode: 'insensitive' } },
       { model:        { contains: s, mode: 'insensitive' } },
       { serialNumber: { contains: s, mode: 'insensitive' } },
@@ -195,6 +217,13 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
     if (b.macWifi && !MAC_RE.test(b.macWifi)) return res.status(400).json({ error: 'MAC WiFi con formato inválido' });
     if (b.macEth  && !MAC_RE.test(b.macEth))  return res.status(400).json({ error: 'MAC Ethernet con formato inválido' });
 
+    const barcode = normalizeBarcode(b.barcode);
+    if (barcode && !BARCODE_RE.test(barcode)) return res.status(400).json({ error: 'El código de barras debe ser de 6 dígitos numéricos' });
+    if (barcode) {
+      const dup = await prisma.asset.findUnique({ where: { barcode } });
+      if (dup) return res.status(409).json({ error: `El código de barras ${barcode} ya está en uso por ${dup.tag}` });
+    }
+
     if (b.serialNumber) {
       const dup = await prisma.asset.findUnique({ where: { serialNumber: b.serialNumber } });
       if (dup) return res.status(409).json({ error: `El número de serie ${b.serialNumber} ya existe` });
@@ -207,6 +236,7 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
       return tx.asset.create({
         data: {
           tag,
+          barcode,
           categorySlug: b.categorySlug,
           brand: b.brand || null,
           model: b.model || null,
@@ -251,11 +281,24 @@ router.patch('/:id', authenticate, requireRole('IT_TECH'), async (req, res, next
       if (dup) return res.status(409).json({ error: `El número de serie ${b.serialNumber} ya existe` });
     }
 
+    // Barcode: opcional, único, 6 dígitos. Soporta limpiar el campo enviando "" o null.
+    let nextBarcode = before.barcode;
+    if (b.barcode !== undefined) {
+      const norm = normalizeBarcode(b.barcode);
+      if (norm && !BARCODE_RE.test(norm)) return res.status(400).json({ error: 'El código de barras debe ser de 6 dígitos numéricos' });
+      if (norm && norm !== before.barcode) {
+        const dup = await prisma.asset.findUnique({ where: { barcode: norm } });
+        if (dup && dup.id !== id) return res.status(409).json({ error: `El código de barras ${norm} ya está en uso por ${dup.tag}` });
+      }
+      nextBarcode = norm;
+    }
+
     const FIELDS = ['brand', 'model', 'serialNumber', 'imei', 'macWifi', 'macEth', 'operatingSystem',
       'condition', 'locationSlug', 'departmentSlug', 'details', 'vendor', 'accessories',
       'evidenceFolderUrl', 'notes'];
     const data = {};
     for (const f of FIELDS) if (b[f] !== undefined) data[f] = b[f] || null;
+    if (b.barcode !== undefined) data.barcode = nextBarcode;
     if (b.purchaseDate  !== undefined) data.purchaseDate  = b.purchaseDate  ? new Date(b.purchaseDate)  : null;
     if (b.warrantyUntil !== undefined) data.warrantyUntil = b.warrantyUntil ? new Date(b.warrantyUntil) : null;
     if (b.lastRevisionDate !== undefined) data.lastRevisionDate = b.lastRevisionDate ? new Date(b.lastRevisionDate) : null;
@@ -386,6 +429,83 @@ router.patch('/:id/retire', authenticate, requireRole('IT_ADMIN'), async (req, r
 
     await audit({ req, action: 'DELETE_LOGICAL', entityType: 'Asset', entityId: id, before, after: { ...after, reason } });
     res.json({ asset: shape(after) });
+  } catch (err) { next(err); }
+});
+
+// ── DELETE /assets/:id (hard delete — solo IT_ADMIN+) ─────────────────────────
+// Modos:
+//  - Por default: rechaza con 409 + conteo de historial si tiene vinculaciones.
+//    El frontend entonces puede preguntar al usuario y reintentar con cascade=true.
+//  - ?cascade=true: borra TODO lo vinculado (asignaciones, actas con sus PDFs,
+//    tickets con sus comentarios y CSAT). El AuditLog se preserva con los
+//    snapshots before/after — el historial queda en /audit para consulta.
+router.delete('/:id', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const cascade = req.query.cascade === 'true';
+    const before = await prisma.asset.findUnique({ where: { id }, include: ASSET_INCLUDE });
+    if (!before) return res.status(404).json({ error: 'Activo no encontrado' });
+
+    const [assignments, actas, tickets] = await Promise.all([
+      prisma.assetAssignment.count({ where: { assetId: id } }),
+      prisma.acta.count({ where: { assetId: id } }),
+      prisma.ticket.count({ where: { assetId: id } }),
+    ]);
+
+    const blockers = [];
+    if (assignments) blockers.push(`${assignments} asignación(es) histórica(s)`);
+    if (actas)       blockers.push(`${actas} acta(s) vinculada(s)`);
+    if (tickets)     blockers.push(`${tickets} ticket(s) vinculado(s)`);
+
+    if (blockers.length > 0 && !cascade) {
+      // 409 con detalle — el frontend pregunta y reintentará con cascade=true si el user confirma.
+      return res.status(409).json({
+        error: 'Este activo tiene historial vinculado.',
+        blockers,
+        counts: { assignments, actas, tickets },
+        suggestion: 'Confirmá que querés eliminar todo el historial vinculado, o cancelá y usá "Dar de baja" para conservarlo activo.',
+      });
+    }
+
+    // Cascade: snapshot del historial al AuditLog antes de borrar, y borrado en orden seguro.
+    await prisma.$transaction(async (tx) => {
+      if (cascade) {
+        // Snapshot del historial antes de tirarlo, para que quede consultable en /audit.
+        const [allAssignments, allActas, allTickets] = await Promise.all([
+          tx.assetAssignment.findMany({ where: { assetId: id } }),
+          tx.acta.findMany({ where: { assetId: id } }),
+          tx.ticket.findMany({ where: { assetId: id }, include: { comments: true, csat: true } }),
+        ]);
+        if (allAssignments.length) {
+          await audit({ req, action: 'DELETE', entityType: 'AssetAssignment', entityId: id, before: allAssignments });
+        }
+        if (allActas.length) {
+          await audit({ req, action: 'DELETE', entityType: 'Acta', entityId: id, before: allActas });
+        }
+        if (allTickets.length) {
+          await audit({ req, action: 'DELETE', entityType: 'Ticket', entityId: id, before: allTickets });
+        }
+
+        // Borrar dependencias en orden (FK constraints):
+        // 1) Comentarios y CSAT de tickets vinculados.
+        const ticketIds = allTickets.map(t => t.id);
+        if (ticketIds.length) {
+          await tx.ticketComment.deleteMany({ where: { ticketId: { in: ticketIds } } });
+          await tx.csatResponse.deleteMany({ where: { ticketId: { in: ticketIds } } });
+          await tx.ticket.deleteMany({ where: { id: { in: ticketIds } } });
+        }
+        // 2) Actas hijas (RETURN/RETIREMENT que referencian otra acta).
+        await tx.acta.deleteMany({ where: { relatedActaId: { in: allActas.map(a => a.id) } } });
+        await tx.acta.deleteMany({ where: { assetId: id } });
+        // 3) Asignaciones.
+        await tx.assetAssignment.deleteMany({ where: { assetId: id } });
+      }
+      // 4) El activo.
+      await tx.asset.delete({ where: { id } });
+    });
+
+    await audit({ req, action: 'DELETE', entityType: 'Asset', entityId: id, before: shape(before) });
+    res.json({ ok: true, deleted: { id, tag: before.tag }, cascade, cleared: cascade ? { assignments, actas, tickets } : null });
   } catch (err) { next(err); }
 });
 

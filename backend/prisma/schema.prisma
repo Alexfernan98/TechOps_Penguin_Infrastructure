@@ -91,6 +91,7 @@ model User {
   departmentSlug String?
   isActive       Boolean   @default(true)
   generic        Boolean   @default(false)
+  notifPrefs     Json?
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -154,6 +155,7 @@ model AssetCategory {
 model Asset {
   id                String         @id @default(cuid())
   tag               String         @unique
+  barcode           String?        @unique
   categorySlug      String
   brand             String?
   model             String?

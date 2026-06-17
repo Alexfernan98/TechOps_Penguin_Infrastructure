@@ -1,7 +1,8 @@
-import { LogOut, ChevronDown, Bell } from 'lucide-react';
+import { LogOut, ChevronDown, Bell, Menu, Sun, Moon } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '@/store/authStore';
+import useThemeStore from '@/store/themeStore';
 import { notificationsApi } from '@/api/notifications';
 
 const ROLE_LABELS = {
@@ -61,15 +62,35 @@ function NotificationsBell() {
   );
 }
 
-export default function Header({ title }) {
+export default function Header({ title, onToggleSidebar }) {
   const { user, logout } = useAuthStore();
+  const { theme, toggle: toggleTheme } = useThemeStore();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 flex-shrink-0">
-      <h1 className="text-lg font-semibold text-slate-800">{title}</h1>
+    <header className="sticky top-0 z-20 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 md:px-6 flex-shrink-0 gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <button
+          onClick={onToggleSidebar}
+          className="md:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100"
+          aria-label="Abrir menú"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <h1 className="text-base md:text-lg font-semibold text-slate-800 truncate">{title}</h1>
+      </div>
 
       <div className="flex items-center gap-1">
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          aria-label="Cambiar tema"
+        >
+          {theme === 'dark'
+            ? <Sun className="w-5 h-5 text-amber-400" />
+            : <Moon className="w-5 h-5 text-slate-500" />}
+        </button>
         <NotificationsBell />
 
         <div className="relative">
@@ -84,8 +105,8 @@ export default function Header({ title }) {
                 <span className="text-white text-sm font-semibold">{user?.name?.[0]?.toUpperCase()}</span>
               </div>
             )}
-            <div className="text-left hidden sm:block">
-              <p className="text-sm font-medium text-slate-800 leading-tight">{user?.name}</p>
+            <div className="text-left hidden lg:block max-w-[180px]">
+              <p className="text-sm font-medium text-slate-800 leading-tight truncate">{user?.name}</p>
               <p className="text-xs text-slate-400">{ROLE_LABELS[user?.role] ?? user?.role}</p>
             </div>
             <ChevronDown className="w-4 h-4 text-slate-400" />

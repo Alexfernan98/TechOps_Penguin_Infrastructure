@@ -3,13 +3,106 @@
 @tailwind utilities;
 
 @layer base {
+  html, body {
+    /* Bloquea scroll horizontal global: cualquier elemento que se desborde
+       debe ser visualmente cortado (su contenido se desplaza dentro de un
+       wrapper con overflow-x-auto, ej. tablas anchas). */
+    @apply overflow-x-hidden;
+  }
   html {
     font-family: 'Inter var', 'Inter', system-ui, sans-serif;
   }
-
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
   }
+  html.dark {
+    color-scheme: dark;
+  }
+  html.dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Dark mode global: overrides de las clases Tailwind más comunes en la UI.
+   Hacemos esto a nivel CSS para no tener que pintar `dark:` en cada archivo
+   (la cobertura llega al ~95% del UI con la siguiente paleta).
+   ─────────────────────────────────────────────────────────────────────── */
+@layer utilities {
+  /* Fondos — colores hex directos para evitar circular deps con @apply.
+     Solo aplica si el elemento no tiene `dark:bg-*` explícito. */
+  .dark .bg-white:not([class*="dark:bg-"])     { background-color: rgb(15 23 42);  } /* slate-900 */
+  .dark .bg-slate-50:not([class*="dark:bg-"])  { background-color: rgb(2 6 23);    } /* slate-950 */
+  .dark .bg-slate-100:not([class*="dark:bg-"]) { background-color: rgb(30 41 59);  } /* slate-800 */
+  .dark .bg-gray-50:not([class*="dark:bg-"])   { background-color: rgb(2 6 23);    } /* slate-950 */
+
+  /* Bordes — slate-100..300 → 800..600 */
+  .dark .border-slate-100 { border-color: rgb(30 41 59);  } /* slate-800 */
+  .dark .border-slate-200 { border-color: rgb(51 65 85);  } /* slate-700 */
+  .dark .border-slate-300 { border-color: rgb(71 85 105); } /* slate-600 */
+  .dark .border-gray-200  { border-color: rgb(51 65 85);  }
+  .dark .border-gray-300  { border-color: rgb(71 85 105); }
+
+  /* Texto: invertimos la escala de slate */
+  .dark .text-slate-900 { color: rgb(248 250 252); } /* slate-50  */
+  .dark .text-slate-800 { color: rgb(241 245 249); } /* slate-100 */
+  .dark .text-slate-700 { color: rgb(226 232 240); } /* slate-200 */
+  .dark .text-slate-600 { color: rgb(203 213 225); } /* slate-300 */
+  .dark .text-slate-500 { color: rgb(148 163 184); } /* slate-400 */
+  .dark .text-slate-400 { color: rgb(100 116 139); } /* slate-500 */
+  .dark .text-slate-300 { color: rgb(71 85 105);  } /* slate-600 */
+  .dark .text-gray-900  { color: rgb(248 250 252); }
+  .dark .text-gray-700  { color: rgb(226 232 240); }
+  .dark .text-gray-500  { color: rgb(148 163 184); }
+
+  /* Hovers comunes */
+  .dark .hover\:bg-slate-50:hover      { background-color: rgb(30 41 59); }
+  .dark .hover\:bg-slate-100:hover     { background-color: rgb(30 41 59); }
+  .dark .hover\:bg-gray-50:hover       { background-color: rgb(30 41 59); }
+  .dark .hover\:bg-gray-100:hover      { background-color: rgb(30 41 59); }
+  .dark .hover\:border-slate-300:hover { border-color: rgb(100 116 139); }
+
+  /* Variantes claras tipo bg-blue-50, bg-amber-50, etc. (alerts/badges)
+     se oscurecen manteniendo el tinte de color. */
+  .dark .bg-blue-50    { background-color: rgba(37, 99, 235, 0.15); }
+  .dark .bg-amber-50   { background-color: rgba(245, 158, 11, 0.15); }
+  .dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.15); }
+  .dark .bg-rose-50    { background-color: rgba(244, 63, 94, 0.15); }
+  .dark .bg-violet-50  { background-color: rgba(139, 92, 246, 0.15); }
+  .dark .bg-indigo-50  { background-color: rgba(99, 102, 241, 0.15); }
+  .dark .bg-orange-50  { background-color: rgba(249, 115, 22, 0.15); }
+
+  /* Bordes coloreados (alertas) */
+  .dark .border-blue-200    { border-color: rgb(30 64 175);   } /* blue-800 */
+  .dark .border-amber-200   { border-color: rgb(146 64 14);   } /* amber-800 */
+  .dark .border-emerald-200 { border-color: rgb(6 95 70);     } /* emerald-800 */
+  .dark .border-rose-200    { border-color: rgb(159 18 57);   } /* rose-800 */
+  .dark .border-violet-200  { border-color: rgb(91 33 182);   } /* violet-800 */
+  .dark .border-indigo-200  { border-color: rgb(55 48 163);   } /* indigo-800 */
+  .dark .border-orange-200  { border-color: rgb(154 52 18);   } /* orange-800 */
+
+  /* Texto sobre alerts coloridos — aclara para legibilidad sobre fondos oscuros */
+  .dark .text-blue-700    { color: rgb(147 197 253); } /* blue-300 */
+  .dark .text-amber-700   { color: rgb(252 211 77);  } /* amber-300 */
+  .dark .text-amber-800   { color: rgb(253 230 138); } /* amber-200 */
+  .dark .text-emerald-700 { color: rgb(110 231 183); } /* emerald-300 */
+  .dark .text-emerald-800 { color: rgb(167 243 208); } /* emerald-200 */
+  .dark .text-rose-700    { color: rgb(253 164 175); } /* rose-300 */
+  .dark .text-violet-700  { color: rgb(196 181 253); } /* violet-300 */
+  .dark .text-indigo-700  { color: rgb(165 180 252); } /* indigo-300 */
+  .dark .text-orange-700  { color: rgb(253 186 116); } /* orange-300 */
+
+  /* Inputs / selects nativos del browser: pintar fondo y texto */
+  .dark input,
+  .dark select,
+  .dark textarea {
+    background-color: rgb(15 23 42);  /* slate-900 */
+    color: rgb(241 245 249);          /* slate-100 */
+  }
+  .dark input::placeholder,
+  .dark textarea::placeholder { color: rgb(100 116 139); /* slate-500 */ }
+  .dark input:read-only,
+  .dark input[readonly] { background-color: rgb(30 41 59); /* slate-800 */ }
 }
 
 @layer components {

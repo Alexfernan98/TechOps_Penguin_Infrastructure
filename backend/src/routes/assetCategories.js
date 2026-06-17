@@ -41,7 +41,7 @@ router.get('/:slug/next-tag', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next) => {
+router.post('/', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
   try {
     const { slug, name, tagPrefix, icon } = req.body;
     if (!slug || !name || !tagPrefix) {
@@ -53,7 +53,7 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next
   } catch (err) { next(err); }
 });
 
-router.patch('/:slug', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next) => {
+router.patch('/:slug', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
   try {
     const { slug } = req.params;
     const before = await prisma.assetCategory.findUnique({ where: { slug } });
@@ -70,6 +70,28 @@ router.patch('/:slug', authenticate, requireRole('SUPER_ADMIN'), async (req, res
     });
     await audit({ req, action: 'UPDATE', entityType: 'AssetCategory', entityId: slug, before, after });
     res.json({ category: after });
+  } catch (err) { next(err); }
+});
+
+// ── DELETE /api/asset-categories/:slug ──────────────────────────────────────────
+router.delete('/:slug', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    const before = await prisma.assetCategory.findUnique({ where: { slug } });
+    if (!before) return res.status(404).json({ error: 'Categoría no encontrada' });
+
+    const assets = await prisma.asset.count({ where: { categorySlug: slug } });
+    if (assets) {
+      return res.status(409).json({
+        error: 'No se puede eliminar la categoría porque tiene activos vinculados.',
+        blockers: [`${assets} activo(s) en esta categoría`],
+        suggestion: 'Cambiá la categoría de esos activos o desactivala en vez de borrarla.',
+      });
+    }
+
+    await prisma.assetCategory.delete({ where: { slug } });
+    await audit({ req, action: 'DELETE', entityType: 'AssetCategory', entityId: slug, before });
+    res.json({ ok: true, deleted: { slug, name: before.name } });
   } catch (err) { next(err); }
 });
 

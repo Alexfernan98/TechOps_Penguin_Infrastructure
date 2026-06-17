@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Search, Upload, Download, ChevronRight, ChevronLeft, AlertTriangle, History, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, Upload, Download, ChevronRight, ChevronLeft, AlertTriangle, History, ArrowUpDown, Camera, ScanLine } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { assetsApi } from '@/api/assets';
 import { actasApi } from '@/api/actas';
@@ -10,6 +10,8 @@ import Drawer from '@/components/ui/Drawer';
 import Modal from '@/components/ui/Modal';
 import Avatar, { shortName } from '@/components/ui/Avatar';
 import { AssetStatusBadge, ConditionText, ASSET_STATUS_LABEL, CONDITION_LABEL, AuditActionBadge } from '@/components/ui/Badge';
+import BarcodeScanner from '@/components/ui/BarcodeScanner';
+import UserPicker from '@/components/ui/UserPicker';
 import useAuthStore from '@/store/authStore';
 
 const STATUSES   = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
@@ -43,6 +45,23 @@ export default function AssetsPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+
+  // Resuelve un código de barras escaneado: abre el drawer del activo o avisa si no existe.
+  const onScanned = useCallback(async (code) => {
+    setShowScanner(false);
+    try {
+      const asset = await assetsApi.byBarcode(code);
+      setSelectedId(asset.id);
+      toast.success(`Encontrado: ${asset.tag} (${asset.brand || ''} ${asset.model || ''})`.trim());
+    } catch (e) {
+      if (e.response?.status === 404) {
+        toast.error(`No hay activo con código ${code}. Editá un activo y asignále este código.`, { duration: 6000 });
+      } else {
+        toast.error(e.response?.data?.error || e.message);
+      }
+    }
+  }, []);
 
   const params = useMemo(() => {
     const p = { page, perPage: 15, sortBy: sort.by, sortDir: sort.dir };
@@ -93,18 +112,21 @@ export default function AssetsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 md:mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Inventario de Activos</h2>
-          <p className="text-slate-500 mt-1">{data.pagination.total} activos registrados</p>
+          <h2 className="text-xl md:text-2xl font-bold text-slate-800">Inventario de Activos</h2>
+          <p className="text-slate-500 text-sm md:text-base mt-1">{data.pagination.total} activos registrados</p>
         </div>
-        {canWrite && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Upload className="w-4 h-4" /> Importar</button>
-            <button onClick={doExport} className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Download className="w-4 h-4" /> Exportar</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setShowScanner(true)} className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50" title="Buscar un activo escaneando su código de barras">
+            <ScanLine className="w-4 h-4" /> Escanear
+          </button>
+          {canWrite && <>
+            <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Upload className="w-4 h-4" /> <span className="hidden sm:inline">Importar</span></button>
+            <button onClick={doExport} className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Download className="w-4 h-4" /> <span className="hidden sm:inline">Exportar</span></button>
             <button onClick={() => setShowNew(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"><Plus className="w-4 h-4" /> Nuevo activo</button>
-          </div>
-        )}
+          </>}
+        </div>
       </div>
 
       {warranty.count > 0 && (
@@ -124,19 +146,20 @@ export default function AssetsPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={f.search} onChange={e => setF({ ...f, search: e.target.value })} placeholder="Buscar por TAG, marca, modelo, serial, usuario…" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Categoría</option>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select>
-          <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Estado</option>{STATUSES.map(s => <option key={s} value={s}>{ASSET_STATUS_LABEL[s]}</option>)}</select>
-          <select value={f.condition} onChange={e => setF({ ...f, condition: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Condición</option>{CONDITIONS.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}</select>
-          <select value={f.dept} onChange={e => setF({ ...f, dept: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Departamento</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select>
-          <select value={f.location} onChange={e => setF({ ...f, location: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Ubicación</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select>
-          <select value={f.user} onChange={e => setF({ ...f, user: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Usuario</option>{users.map(u => <option key={u.id} value={u.id}>{shortName(u)}</option>)}</select>
-          <button onClick={clearFilters} className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpiar</button>
+        <div className="grid grid-cols-2 md:flex md:flex-wrap items-stretch md:items-center gap-2">
+          <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Categoría</option>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select>
+          <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Estado</option>{STATUSES.map(s => <option key={s} value={s}>{ASSET_STATUS_LABEL[s]}</option>)}</select>
+          <select value={f.condition} onChange={e => setF({ ...f, condition: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Condición</option>{CONDITIONS.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}</select>
+          <select value={f.dept} onChange={e => setF({ ...f, dept: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Departamento</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select>
+          <select value={f.location} onChange={e => setF({ ...f, location: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Ubicación</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select>
+          <select value={f.user} onChange={e => setF({ ...f, user: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Usuario</option>{users.map(u => <option key={u.id} value={u.id}>{shortName(u)}</option>)}</select>
+          <button onClick={clearFilters} className="col-span-2 md:col-auto px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpiar</button>
         </div>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[800px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-left text-xs font-semibold text-slate-500 uppercase">
               <th className="px-4 py-3 cursor-pointer" onClick={() => toggleSort('tag')}><span className="inline-flex items-center gap-1">TAG <ArrowUpDown className="w-3 h-3" /></span></th>
@@ -170,6 +193,7 @@ export default function AssetsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-500">
           <span>Mostrando {data.assets.length} de {data.pagination.total}</span>
           <div className="flex items-center gap-2">
@@ -183,6 +207,7 @@ export default function AssetsPage() {
       {selectedId && <AssetDrawer id={selectedId} canWrite={canWrite} users={users} locs={locs} depts={depts} onClose={() => setSelectedId(null)} onRefresh={onRefresh} />}
       <NewAssetModal open={showNew} cats={cats} locs={locs} depts={depts} onClose={() => setShowNew(false)} onSaved={(a) => { setShowNew(false); onRefresh(); setSelectedId(a.id); }} />
       <ImportModal open={showImport} onClose={() => setShowImport(false)} onDone={onRefresh} />
+      <BarcodeScanner open={showScanner} onDetect={onScanned} onClose={() => setShowScanner(false)} />
     </div>
   );
 }
@@ -193,6 +218,8 @@ function KV({ label, children }) {
 }
 
 function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
+  const { user: me } = useAuthStore();
+  const canDelete = ['IT_ADMIN', 'SUPER_ADMIN'].includes(me?.role);
   const [asset, setAsset] = useState(null);
   const [history, setHistory] = useState([]);
   const [tab, setTab] = useState('general');
@@ -205,6 +232,52 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
   }, [id, onClose]);
   useEffect(() => { load(); }, [load]);
 
+  const hardDelete = async () => {
+    if (!window.confirm(`¿Eliminar DEFINITIVAMENTE el activo ${asset.tag}?\n\nEsta acción no se puede deshacer.`)) return;
+    try {
+      await assetsApi.remove(asset.id);
+      toast.success(`Activo ${asset.tag} eliminado`);
+      onRefresh(); onClose();
+    } catch (e) {
+      const data = e.response?.data;
+      // Si el backend bloqueó por historial vinculado, ofrecemos el cascade.
+      if (e.response?.status === 409 && data?.counts) {
+        const parts = [];
+        if (data.counts.assignments) parts.push(`${data.counts.assignments} asignación(es) histórica(s)`);
+        if (data.counts.actas)       parts.push(`${data.counts.actas} acta(s) de entrega/devolución/baja`);
+        if (data.counts.tickets)     parts.push(`${data.counts.tickets} ticket(s) (con comentarios y CSAT)`);
+        const detail = parts.join('\n  • ');
+        const ok = window.confirm(
+          `El activo ${asset.tag} tiene historial vinculado:\n\n  • ${detail}\n\n` +
+          `Si continuás, se eliminará TODO lo anterior además del activo.\n` +
+          `Los snapshots quedan guardados en /audit para consulta posterior.\n\n` +
+          `¿Eliminar todo?`
+        );
+        if (!ok) {
+          toast('Operación cancelada — usá "Dar de baja" para conservar el historial.', { icon: 'ℹ️' });
+          return;
+        }
+        try {
+          const r = await assetsApi.remove(asset.id, { cascade: true });
+          const cleared = r.cleared || {};
+          const summary = [
+            cleared.assignments && `${cleared.assignments} asignación(es)`,
+            cleared.actas && `${cleared.actas} acta(s)`,
+            cleared.tickets && `${cleared.tickets} ticket(s)`,
+          ].filter(Boolean).join(', ');
+          toast.success(`Activo ${asset.tag} eliminado · removidos: ${summary || 'sin historial'}`, { duration: 6000 });
+          onRefresh(); onClose();
+        } catch (e2) {
+          toast.error(e2.response?.data?.error || e2.message);
+        }
+        return;
+      }
+      // Otros errores
+      const text = data?.error || e.message;
+      toast.error(text, { duration: 6000 });
+    }
+  };
+
   if (!asset) return <Drawer open onClose={onClose} title="Cargando…" width={620}><p className="text-slate-400">Cargando…</p></Drawer>;
 
   const afterMutation = (actaSeed) => { load(); onRefresh(); setModal(null); if (actaSeed) setPendingActa(actaSeed); };
@@ -214,16 +287,23 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
       <Drawer open onClose={onClose} width={640}
         title={<span className="font-mono">{asset.tag}</span>}
         subtitle={`${asset.brand || ''} ${asset.model || ''}`.trim()}
-        footer={canWrite && asset.status !== 'RETIRED' && asset.status !== 'LOST' ? (
+        footer={canWrite || canDelete ? (
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setModal('edit')} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Editar</button>
-              <button onClick={() => setModal('status')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Cambiar estado</button>
-              {asset.status === 'ASSIGNED'
-                ? <button onClick={() => setModal('return')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Devolver</button>
-                : <button onClick={() => setModal('assign')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Asignar</button>}
+              {canWrite && asset.status !== 'RETIRED' && asset.status !== 'LOST' && <>
+                <button onClick={() => setModal('edit')} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Editar</button>
+                <button onClick={() => setModal('status')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Cambiar estado</button>
+                {asset.status === 'ASSIGNED'
+                  ? <button onClick={() => setModal('return')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Devolver</button>
+                  : <button onClick={() => setModal('assign')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Asignar</button>}
+              </>}
             </div>
-            <button onClick={() => setModal('retire')} className="px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 text-sm font-medium rounded-lg hover:bg-rose-100">Dar de baja</button>
+            <div className="flex gap-2">
+              {canWrite && asset.status !== 'RETIRED' && asset.status !== 'LOST' &&
+                <button onClick={() => setModal('retire')} className="px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 text-sm font-medium rounded-lg hover:bg-rose-100">Dar de baja</button>}
+              {canDelete &&
+                <button onClick={hardDelete} className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg" title="Borrado definitivo. Solo si no tiene historial.">Eliminar</button>}
+            </div>
           </div>
         ) : null}
       >
@@ -237,6 +317,7 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
         {tab === 'general' && (
           <dl>
             <KV label="TAG"><span className="font-mono">{asset.tag}</span></KV>
+            <KV label="Código de barras"><span className="font-mono">{asset.barcode || '—'}</span></KV>
             <KV label="Categoría">{asset.category?.name}</KV>
             <KV label="Marca / Modelo">{`${asset.brand || ''} ${asset.model || ''}`.trim() || '—'}</KV>
             <KV label="Estado">{ASSET_STATUS_LABEL[asset.status]}</KV>
@@ -304,8 +385,36 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
 const inputCls = 'mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500';
 const Field = ({ label, children }) => <div><label className="text-xs font-medium text-slate-500">{label}</label>{children}</div>;
 
+// Input numérico de 6 dígitos con botón "Escanear" al lado. Pad-zero al blur.
+function BarcodeField({ value, onChange }) {
+  const [scan, setScan] = useState(false);
+  const onBlur = () => {
+    if (!value) return;
+    const digits = String(value).replace(/\D/g, '');
+    if (digits) onChange(digits.padStart(6, '0').slice(-6));
+  };
+  return (
+    <>
+      <div className="mt-1 flex gap-2">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onBlur={onBlur}
+          placeholder="000700"
+          inputMode="numeric"
+          className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:border-blue-500"
+        />
+        <button type="button" onClick={() => setScan(true)} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 inline-flex items-center gap-1.5" title="Escanear con la cámara">
+          <Camera className="w-4 h-4" /> Escanear
+        </button>
+      </div>
+      <BarcodeScanner open={scan} onClose={() => setScan(false)} onDetect={(code) => { onChange(code); setScan(false); }} />
+    </>
+  );
+}
+
 function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
-  const empty = { categorySlug: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '' };
+  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '' };
   const [form, setForm] = useState(empty);
   const [nextTag, setNextTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -326,6 +435,11 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Categoría *"><select value={form.categorySlug} onChange={e => setForm({ ...form, categorySlug: e.target.value })} className={inputCls}><option value="">Seleccionar…</option>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select></Field>
         <Field label="TAG (auto)"><input value={nextTag} readOnly className={`${inputCls} bg-slate-50 font-mono`} placeholder="—" /></Field>
+        <div className="col-span-2">
+          <Field label="Código de barras (opcional · 6 dígitos)">
+            <BarcodeField value={form.barcode} onChange={(v) => setForm({ ...form, barcode: v })} />
+          </Field>
+        </div>
         <Field label="Marca"><input value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className={inputCls} /></Field>
         <Field label="Modelo"><input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls} /></Field>
         <Field label="Número de serie"><input value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} className={`${inputCls} font-mono`} /></Field>
@@ -346,7 +460,7 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
 }
 
 function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
-  const [form, setForm] = useState({ brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '' });
+  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '' });
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     setBusy(true);
@@ -358,6 +472,11 @@ function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
     <Modal open onClose={onClose} title={`Editar ${asset.tag}`} width={620}
       footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Guardar</button></div>}>
       <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <Field label="Código de barras (opcional · 6 dígitos)">
+            <BarcodeField value={form.barcode} onChange={(v) => setForm({ ...form, barcode: v })} />
+          </Field>
+        </div>
         <Field label="Marca"><input value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className={inputCls} /></Field>
         <Field label="Modelo"><input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls} /></Field>
         <Field label="Número de serie"><input value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} className={`${inputCls} font-mono`} /></Field>
@@ -390,7 +509,9 @@ function AssignModal({ asset, users, depts, onClose, onDone }) {
     <Modal open onClose={onClose} title={`Asignar ${asset.tag}`}
       footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !userId} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Asignar</button></div>}>
       <div className="space-y-3">
-        <Field label="Empleado"><select value={userId} onChange={e => setUserId(e.target.value)} className={inputCls}><option value="">Seleccionar…</option>{users.map(u => <option key={u.id} value={u.id}>{shortName(u)}{u.ci ? '' : ' (sin CI)'}</option>)}</select></Field>
+        <Field label="Empleado">
+          <UserPicker users={users} value={userId} onChange={setUserId} requireCi />
+        </Field>
         {target && !target.ci && <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700">Para emitir el acta de entrega, el empleado debe tener CI cargada en Usuarios.</div>}
         <Field label="Observaciones"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} /></Field>
       </div>
