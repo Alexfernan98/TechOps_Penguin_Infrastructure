@@ -386,7 +386,7 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
       {modal === 'assign' && <AssignModal asset={asset} users={users} depts={depts} onClose={() => setModal(null)} onDone={(uid) => afterMutation({ type: 'DELIVERY', assetId: asset.id, receptorId: uid, conditionAfter: asset.condition })} />}
       {modal === 'return' && <ReturnModal asset={asset} onClose={() => setModal(null)} onDone={(cond) => afterMutation({ type: 'RETURN', assetId: asset.id, receptorId: asset.assignedTo?.id, conditionBefore: asset.condition, conditionAfter: cond })} />}
       {modal === 'status' && <StatusModal asset={asset} onClose={() => setModal(null)} onDone={() => afterMutation()} />}
-      {modal === 'retire' && <RetireModal asset={asset} onClose={() => setModal(null)} onDone={(tipo, reason) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja: tipo, observations: reason, conditionAfter: asset.condition })} />}
+      {modal === 'retire' && <RetireModal asset={asset} onClose={() => setModal(null)} onDone={(_assetStatus, reason, tipoBaja) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja, observations: reason, conditionAfter: asset.condition })} />}
       {pendingActa && <ActaOfferModal seed={pendingActa} onClose={() => setPendingActa(null)} />}
     </>
   );
@@ -577,13 +577,33 @@ function StatusModal({ asset, onClose, onDone }) {
   );
 }
 
+// Sub-tipos de baja del acta (metadata.tipoBaja). Mapean a un status final del Asset:
+//   DAMAGE  → DAMAGED (en el activo) — pasa a RETIRED si es irreparable
+//   THEFT   → LOST    (robo)
+//   LOSS    → LOST    (extravío)
+//   OBSOLETE→ RETIRED (fin de vida útil)
+const TIPO_BAJA_OPTIONS = [
+  { value: 'DAMAGE',   label: 'Daño irreparable',     assetStatus: 'RETIRED' },
+  { value: 'THEFT',    label: 'Robo',                 assetStatus: 'LOST'    },
+  { value: 'LOSS',     label: 'Extravío',             assetStatus: 'LOST'    },
+  { value: 'OBSOLETE', label: 'Obsoleto / Fin de vida', assetStatus: 'RETIRED' },
+];
+
 function RetireModal({ asset, onClose, onDone }) {
-  const [status, setStatus] = useState('RETIRED');
+  const [tipoBaja, setTipoBaja] = useState('OBSOLETE');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const selected = TIPO_BAJA_OPTIONS.find(o => o.value === tipoBaja) || TIPO_BAJA_OPTIONS[0];
+
   const submit = async () => {
     setBusy(true);
-    try { await assetsApi.retire(asset.id, { status, reason }); toast.success('Activo dado de baja'); onDone(status, reason); }
+    try {
+      // El backend de /retire espera status (RETIRED/LOST). Lo derivamos del tipoBaja.
+      await assetsApi.retire(asset.id, { status: selected.assetStatus, reason });
+      toast.success('Activo dado de baja');
+      onDone(selected.assetStatus, reason, tipoBaja);
+    }
     catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
@@ -592,8 +612,13 @@ function RetireModal({ asset, onClose, onDone }) {
       footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !reason} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Confirmar baja</button></div>}>
       <div className="space-y-3">
         <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">La baja es <strong>lógica</strong>: el registro se conserva con su historial. Nunca se borra físicamente.</div>
-        <Field label="Tipo de baja"><select value={status} onChange={e => setStatus(e.target.value)} className={inputCls}><option value="RETIRED">Descarte (RETIRED)</option><option value="LOST">Extravío / Robo (LOST)</option></select></Field>
-        <Field label="Motivo *"><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className={inputCls} placeholder="Obligatorio" /></Field>
+        <Field label="Tipo de baja">
+          <select value={tipoBaja} onChange={e => setTipoBaja(e.target.value)} className={inputCls}>
+            {TIPO_BAJA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </Field>
+        <p className="text-xs text-slate-400 -mt-1">Estado final del activo: <span className="font-mono font-medium">{selected.assetStatus}</span></p>
+        <Field label="Motivo / Observaciones *"><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className={inputCls} placeholder="Detalle del incidente, número de denuncia si aplica, fecha aproximada..." /></Field>
       </div>
     </Modal>
   );

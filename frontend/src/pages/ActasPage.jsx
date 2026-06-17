@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Search, Printer, Upload, ExternalLink, FileText } from 'lucide-react';
+import { Search, Printer, Upload, ExternalLink, FileText, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { actasApi } from '@/api/actas';
-import { API_BASE } from '@/api/axios';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import useAuthStore from '@/store/authStore';
+import { API_BASE, ORIGIN } from '@/api/axios';
 import api from '@/api/axios';
+
+// Resuelve la URL absoluta de un PDF de acta según de dónde viene:
+//  - http(s)://...  → tal cual (Drive u origen externo)
+//  - /uploads/...   → `${ORIGIN}/uploads/...` (montado fuera de /api)
+//  - /actas/...     → `${API_BASE}/actas/...` (preview/pdf endpoints REST)
+function resolveActaUrl(path) {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('/uploads/')) return `${ORIGIN}${path}`;
+  return `${API_BASE}${path}`;
+}
 import Drawer from '@/components/ui/Drawer';
 import Modal from '@/components/ui/Modal';
 import { shortName } from '@/components/ui/Avatar';
@@ -98,6 +111,9 @@ export default function ActasPage() {
 function ActaDrawer({ id, onClose, onRefresh }) {
   const [acta, setActa] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
+  const { user: me } = useAuthStore();
+  const confirm = useConfirm();
+  const canDelete = ['IT_ADMIN', 'SUPER_ADMIN'].includes(me?.role);
 
   const load = useCallback(async () => {
     try { setActa(await actasApi.get(id)); }
@@ -105,9 +121,27 @@ function ActaDrawer({ id, onClose, onRefresh }) {
   }, [id, onClose]);
   useEffect(() => { load(); }, [load]);
 
+  const handleDelete = async () => {
+    const ok = await confirm({
+      title: `¿Eliminar acta ${acta.number}?`,
+      description:
+        'Esta acción no se puede deshacer. El registro y el PDF firmado (si lo hay) se eliminan permanentemente. ' +
+        'Quedará un snapshot en /audit para consulta.',
+      confirmLabel: 'Eliminar acta',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await actasApi.remove(id);
+      toast.success(`Acta ${acta.number} eliminada`);
+      onRefresh();
+      onClose();
+    } catch (e) { toast.error(e.response?.data?.error || e.message); }
+  };
+
   if (!acta) return <Drawer open onClose={onClose} title="Cargando…" width={640}><p className="text-slate-400">Cargando…</p></Drawer>;
   const signed = acta.statusActa === 'signed';
-  const src = acta.signedDriveUrl || (acta.pdfUrl?.startsWith('http') ? acta.pdfUrl : `${API_BASE}${acta.pdfUrl || actasApi.previewUrl(id)}`);
+  const src = acta.signedDriveUrl || resolveActaUrl(acta.pdfUrl) || resolveActaUrl(actasApi.previewUrl(id));
 
   return (
     <>
@@ -115,10 +149,15 @@ function ActaDrawer({ id, onClose, onRefresh }) {
         title={<span className="font-mono">{acta.number}</span>}
         subtitle={`${ACTA_TYPE_LABEL[acta.type]} · ${acta.asset?.tag}`}
         footer={
-          <div className="flex items-center justify-between gap-2">
-            <a href={`${API_BASE}${actasApi.pdfUrl(id)}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Printer className="w-4 h-4" /> Imprimir / PDF</a>
-            {!signed && <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"><Upload className="w-4 h-4" /> Subir firmada</button>}
-            {signed && acta.signedDriveUrl && <a href={acta.signedDriveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg"><ExternalLink className="w-4 h-4" /> Abrir en Drive</a>}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <a href={resolveActaUrl(actasApi.pdfUrl(id))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Printer className="w-4 h-4" /> Imprimir / PDF</a>
+              {canDelete && <button onClick={handleDelete} className="inline-flex items-center gap-2 px-3 py-2 border border-rose-200 text-rose-700 text-sm font-medium rounded-lg hover:bg-rose-50" title="Borrar acta (uso típico: limpiar pruebas)"><Trash2 className="w-4 h-4" /> Eliminar</button>}
+            </div>
+            <div className="flex items-center gap-2">
+              {!signed && <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"><Upload className="w-4 h-4" /> Subir firmada</button>}
+              {signed && acta.signedDriveUrl && <a href={acta.signedDriveUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg"><ExternalLink className="w-4 h-4" /> Abrir en Drive</a>}
+            </div>
           </div>
         }
       >
@@ -131,7 +170,7 @@ function ActaDrawer({ id, onClose, onRefresh }) {
           <div><p className="text-xs text-slate-400">Firmante</p><p className="text-slate-700">{shortName(acta.firmante)}</p></div>
         </div>
         <div className="border border-slate-200 rounded-lg overflow-hidden" style={{ height: 520 }}>
-          <iframe title="preview" src={signed ? src : `${API_BASE}${actasApi.previewUrl(id)}`} className="w-full h-full" />
+          <iframe title="preview" src={signed ? src : resolveActaUrl(actasApi.previewUrl(id))} className="w-full h-full" />
         </div>
         <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><FileText className="w-3 h-3" /> Vista previa del documento {signed ? 'firmado' : 'generado'}.</p>
       </Drawer>
