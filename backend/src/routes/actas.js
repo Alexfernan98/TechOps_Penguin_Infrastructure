@@ -34,11 +34,44 @@ const ACTA_INCLUDE = {
   firmante: { select: PERSON_SELECT },
 };
 
-const ACTA_TYPES = ['DELIVERY', 'RETURN', 'RETIREMENT'];
+const ACTA_TYPES   = ['DELIVERY', 'RETURN', 'RETIREMENT'];
+const TIPO_BAJA    = ['DAMAGE', 'THEFT', 'LOSS', 'OBSOLETE'];
+
+// Prefijo corto por tipo: códigos de 3 letras alineados al lenguaje del usuario.
+const TYPE_PREFIX  = { DELIVERY: 'ENT', RETURN: 'DEV', RETIREMENT: 'BAJ' };
+const TYPE_VERBOSE = { DELIVERY: 'ENTREGA', RETURN: 'DEVOLUCION', RETIREMENT: 'BAJA' };
+
+// Extrae el sufijo legible del TAG completo:
+//   PE1H-IT-MON-001  →  MON-001
+//   PE1H-IT-PC-012   →  PC-012
+// Si no podemos parsear, devolvemos el TAG entero como fallback.
+function shortTagSuffix(tag) {
+  if (!tag) return '';
+  const parts = tag.split('-');
+  return parts.length >= 2 ? parts.slice(-2).join('-') : tag;
+}
+
+// Slugifica un nombre para usar en el nombre del archivo PDF:
+//   "Lorenzo Antonio Martínez"  →  "lorenzo-antonio-martinez"
+function slugifyName(name) {
+  if (!name) return '';
+  return name
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // sin acentos
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
 
 function flatten(acta) {
   const meta = acta.metadata || {};
-  return { ...acta, number: meta.number || null, statusActa: meta.status || 'pending_sign', tipoBaja: meta.tipoBaja || null, signedDriveUrl: meta.signedDriveUrl || null };
+  return {
+    ...acta,
+    number:          meta.number || null,
+    displayName:     meta.displayName || null,
+    statusActa:      meta.status || 'pending_sign',
+    tipoBaja:        meta.tipoBaja || null,
+    signedDriveUrl:  meta.signedDriveUrl || null,
+  };
 }
 
 function actaView(acta) {
@@ -53,11 +86,42 @@ function actaView(acta) {
   };
 }
 
-async function nextActaNumber(tx, year) {
-  const start = new Date(`${year}-01-01T00:00:00.000Z`);
-  const end   = new Date(`${year + 1}-01-01T00:00:00.000Z`);
-  const count = await tx.acta.count({ where: { createdAt: { gte: start, lt: end } } });
-  return `ACTA-${year}-${String(count + 1).padStart(4, '0')}`;
+// Calcula el próximo número correlativo por tipo + año.
+// Ejemplo: ENT-2026-0001, DEV-2026-0001, BAJ-2026-0001 corren contadores independientes.
+async function nextActaNumber(tx, type, year, asset) {
+  const prefix = TYPE_PREFIX[type];
+  const start  = new Date(`${year}-01-01T00:00:00.000Z`);
+  const end    = new Date(`${year + 1}-01-01T00:00:00.000Z`);
+  // Filtra por tipo Y por prefijo en metadata.number (cuando hay actas viejas con
+  // formato ACTA-YYYY-NNNN, no las contamos para el nuevo correlativo).
+  const sameTypeYear = await tx.acta.findMany({
+    where: { type, createdAt: { gte: start, lt: end } },
+    select: { metadata: true },
+  });
+  const taken = sameTypeYear
+    .map(a => (a.metadata?.number || '').match(new RegExp(`^${prefix}-${year}-(\\d+)-`)))
+    .filter(Boolean)
+    .map(m => parseInt(m[1], 10));
+  const next = (taken.length ? Math.max(...taken) : 0) + 1;
+  const seq  = String(next).padStart(4, '0');
+
+  // Sufijo TAG ej. MON-001. Si el activo no existe (caso raro), usamos 'NO-TAG'.
+  const tagSuffix = shortTagSuffix(asset?.tag) || 'NO-TAG';
+  return `${prefix}-${year}-${seq}-${tagSuffix}`;
+}
+
+// Construye el nombre del PDF / archivo subido.
+//   ENT/DEV: ACTA-ENTREGA-MON-001-2026-06-15-lorenzo-martinez
+//   BAJ:     ACTA-BAJA-DAMAGE-MON-001-2026-06-15        (sin persona)
+function buildDisplayName({ type, asset, receptor, tipoBaja, date }) {
+  const tagSuffix = shortTagSuffix(asset?.tag) || 'NO-TAG';
+  const ymd = new Date(date || Date.now()).toISOString().slice(0, 10);
+  const head = `ACTA-${TYPE_VERBOSE[type]}`;
+  if (type === 'RETIREMENT') {
+    return [head, tipoBaja || 'OBSOLETE', tagSuffix, ymd].join('-');
+  }
+  const personSlug = slugifyName(receptor?.name) || 'receptor';
+  return [head, tagSuffix, ymd, personSlug].join('-');
 }
 
 // ── GET /actas (listado paginado) ──────────────────────────────────────────────
@@ -180,8 +244,27 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
       if (lastAssign) daysInUse = Math.max(0, Math.round((Date.now() - new Date(lastAssign.assignedAt)) / 86400000));
     }
 
+    // Validar tipoBaja solo para RETIREMENT.
+    let tipoBaja = null;
+    if (b.type === 'RETIREMENT') {
+      tipoBaja = (b.tipoBaja || '').toUpperCase();
+      if (!TIPO_BAJA.includes(tipoBaja)) {
+        return res.status(400).json({
+          error: `tipoBaja debe ser uno de: ${TIPO_BAJA.join(', ')}`,
+          received: b.tipoBaja,
+        });
+      }
+    }
+
+    const now = new Date();
     const created = await prisma.$transaction(async (tx) => {
-      const number = await nextActaNumber(tx, new Date().getFullYear());
+      const number = await nextActaNumber(tx, b.type, now.getFullYear(), asset);
+      // Para displayName necesitamos los datos del receptor (a menos que sea baja).
+      const receptor = b.type === 'RETIREMENT'
+        ? null
+        : await tx.user.findUnique({ where: { id: receptorId }, select: { name: true } });
+      const displayName = buildDisplayName({ type: b.type, asset, receptor, tipoBaja, date: now });
+
       return tx.acta.create({
         data: {
           type: b.type, assetId: b.assetId, receptorId, firmanteId,
@@ -191,7 +274,7 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
           daysInUse,
           observations: b.observations || b.motivoBaja || null,
           itDecision: b.itDecision || null,
-          metadata: { number, status: 'pending_sign', tipoBaja: b.tipoBaja || null },
+          metadata: { number, displayName, status: 'pending_sign', tipoBaja },
         },
         include: ACTA_INCLUDE,
       });
@@ -236,6 +319,35 @@ router.post('/:id/upload-signed', authenticate, requireRole('IT_TECH'), upload.s
     });
 
     res.json({ acta: flatten(after) });
+  } catch (err) { next(err); }
+});
+
+// ── DELETE /actas/:id (solo IT_ADMIN+) ─────────────────────────────────────────
+// Permite borrar actas (típicamente las de prueba). Hace snapshot completo al
+// AuditLog antes y elimina el PDF firmado del filesystem si vive en /uploads.
+router.delete('/:id', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const before = await prisma.acta.findUnique({ where: { id }, include: ACTA_INCLUDE });
+    if (!before) return res.status(404).json({ error: 'Acta no encontrada' });
+
+    // Si hay un PDF firmado guardado localmente, lo borramos del disco.
+    const meta = before.metadata || {};
+    if (meta.signedFileName) {
+      const path = require('path');
+      const fs   = require('fs');
+      const filePath = path.join(__dirname, '../../uploads/actas', meta.signedFileName);
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }
+      catch (e) { console.warn('No se pudo borrar el PDF del disco:', e.message); }
+    }
+
+    // Si esta acta tiene actas "hijas" (RETURN/RETIREMENT que la referencian via
+    // relatedActaId), las desvinculamos para no romper la FK.
+    await prisma.acta.updateMany({ where: { relatedActaId: id }, data: { relatedActaId: null } });
+
+    await prisma.acta.delete({ where: { id } });
+    await audit({ req, action: 'DELETE', entityType: 'Acta', entityId: id, before: flatten(before) });
+    res.json({ ok: true, deleted: { id, number: meta.number || null } });
   } catch (err) { next(err); }
 });
 
