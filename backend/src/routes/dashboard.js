@@ -35,9 +35,14 @@ router.get('/', authenticate, async (_req, res, next) => {
       prisma.department.findMany({ select: { slug: true, name: true } }),
     ]);
 
-    // Actas pendientes de firma (status vive en metadata) → contar las no firmadas.
-    const allActas = await prisma.acta.findMany({ select: { metadata: true } });
-    const actasPendingSign = allActas.filter(a => (a.metadata?.status || 'pending_sign') !== 'signed').length;
+    // Actas pendientes de firma (status vive en metadata.status).
+    // Optimización: count con filtro JSON en PostgreSQL en lugar de findMany + filter en Node.
+    // Total - firmadas = pendientes. Default es pending_sign cuando no hay status en metadata.
+    const [totalActas, signedActas] = await Promise.all([
+      prisma.acta.count(),
+      prisma.acta.count({ where: { metadata: { path: ['status'], equals: 'signed' } } }),
+    ]);
+    const actasPendingSign = totalActas - signedActas;
 
     const byStatus = Object.fromEntries(statusGroups.map(g => [g.status, g._count]));
     const repair = (byStatus.REPAIR || 0) + (byStatus.DAMAGED || 0);

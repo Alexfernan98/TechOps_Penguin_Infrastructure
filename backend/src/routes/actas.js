@@ -124,6 +124,11 @@ router.get('/:id/pdf', authenticate, async (req, res, next) => {
     const puppeteer = require('puppeteer');
     const browser = await puppeteer.launch({
       headless: 'new',
+      // En contenedores ARM64 el chrome bundled de puppeteer es x86 y crashea con
+      // rosetta error. Usamos el chromium del sistema (Alpine: /usr/bin/chromium-browser)
+      // vía PUPPETEER_EXECUTABLE_PATH. Si la env var no está, dejamos que puppeteer
+      // intente con el bundled (útil en dev local fuera de Docker).
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
     try {

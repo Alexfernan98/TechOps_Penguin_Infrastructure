@@ -4,12 +4,17 @@ const { tokensForUser, verifyRefresh } = require('../utils/jwt');
 const { authenticate } = require('../middleware/auth');
 const prisma = require('../../prisma/client');
 
-const COOKIE_OPTS = {
-  httpOnly: true,
-  secure:   process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
-  path:     '/',
-};
+// `secure: true` solo cuando el request entrante vino por HTTPS (nginx setea
+// X-Forwarded-Proto). En HTTP plano queda secure:false para no romper cookies.
+function cookieOpts(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  return {
+    httpOnly: true,
+    secure:   proto === 'https',
+    sameSite: 'lax',
+    path:     '/',
+  };
+}
 
 // Deriva el origen público desde el request entrante (respeta X-Forwarded-* si
 // está detrás de nginx). Permite que la app funcione desde cualquier host/IP
@@ -40,8 +45,8 @@ router.get('/google/callback', (req, res, next) => {
   }, (err, user) => {
     if (err || !user) return res.redirect(`${origin}/login?error=unauthorized`);
     const { accessToken, refreshToken } = tokensForUser(user);
-    res.cookie('access_token',  accessToken,  { ...COOKIE_OPTS, maxAge: 60 * 60 * 1000 });
-    res.cookie('refresh_token', refreshToken, { ...COOKIE_OPTS, maxAge: 7 * 24 * 60 * 60 * 1000 });
+    res.cookie('access_token',  accessToken,  { ...cookieOpts(req), maxAge: 60 * 60 * 1000 });
+    res.cookie('refresh_token', refreshToken, { ...cookieOpts(req), maxAge: 7 * 24 * 60 * 60 * 1000 });
     res.redirect(`${origin}/dashboard`);
   })(req, res, next);
 });
@@ -63,7 +68,7 @@ router.post('/refresh', async (req, res) => {
     }
 
     const { accessToken } = tokensForUser(user);
-    res.cookie('access_token', accessToken, { ...COOKIE_OPTS, maxAge: 60 * 60 * 1000 });
+    res.cookie('access_token', accessToken, { ...cookieOpts(req), maxAge: 60 * 60 * 1000 });
 
     return res.json({ ok: true });
   } catch {
@@ -78,8 +83,9 @@ router.get('/me', authenticate, (req, res) => {
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 router.post('/logout', (req, res) => {
-  res.clearCookie('access_token',  { path: '/' });
-  res.clearCookie('refresh_token', { path: '/' });
+  const opts = cookieOpts(req);
+  res.clearCookie('access_token',  { path: '/', secure: opts.secure, sameSite: opts.sameSite });
+  res.clearCookie('refresh_token', { path: '/', secure: opts.secure, sameSite: opts.sameSite });
   res.json({ ok: true });
 });
 

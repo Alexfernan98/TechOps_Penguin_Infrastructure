@@ -13,4 +13,7 @@ export const assetsApi = {
   warrantyAlerts: ()       => api.get('/assets/warranty-alerts').then(r => r.data),
   import:    (rows)        => api.post('/assets/import', { rows }).then(r => r.data),
   exportUrl: (params = {}) => `/assets/export?${new URLSearchParams(params).toString()}`,
+  remove:    (id, { cascade = false } = {}) =>
+    api.delete(`/assets/${id}${cascade ? '?cascade=true' : ''}`).then(r => r.data),
+  byBarcode: (code)        => api.get(`/assets/by-barcode/${encodeURIComponent(code)}`).then(r => r.data.asset),
 };

@@ -10,7 +10,9 @@ const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 const FROM_NAME = process.env.SMTP_FROM_NAME || process.env.EMAIL_FROM_NAME || 'TechOpsHub · Penguin Infrastructure';
-const APP_URL   = process.env.FRONTEND_URL || 'http://localhost:3000';
+// APP_URL fallback solo si nadie pasa origin desde el handler. Idealmente el caller
+// pasa `appUrl` (derivado del request) para que el link funcione desde cualquier host LAN.
+const APP_URL_FALLBACK = process.env.FRONTEND_URL || 'http://localhost';
 
 let transporter = null;
 if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
@@ -40,8 +42,9 @@ function renderTemplate({ title, message, ctaLabel, ctaUrl }) {
   </div></body></html>`;
 }
 
-async function sendEmail({ to, subject, title, message, ctaLabel, ctaUrl, entityPath }) {
-  const url = ctaUrl || (entityPath ? `${APP_URL}${entityPath}` : null);
+async function sendEmail({ to, subject, title, message, ctaLabel, ctaUrl, entityPath, appUrl }) {
+  const base = appUrl || APP_URL_FALLBACK;
+  const url  = ctaUrl || (entityPath ? `${base}${entityPath}` : null);
   const html = renderTemplate({ title: title || subject, message, ctaLabel, ctaUrl: url });
 
   if (!transporter) {

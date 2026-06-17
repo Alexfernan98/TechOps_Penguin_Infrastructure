@@ -40,10 +40,20 @@ async function sweepWarranties() {
   } catch (err) { console.error('sweepWarranties falló:', err.message); }
 }
 
+// Wrapper que captura cualquier rechazo no manejado dentro del sweep para que
+// un crash de un job no tumbe los próximos ni el process.
+function safe(fn, name) {
+  return () => {
+    Promise.resolve()
+      .then(fn)
+      .catch(err => console.error(`[cron:${name}] crash:`, err && err.message || err));
+  };
+}
+
 function startCron() {
   if (process.env.DISABLE_CRON === 'true') return;
-  setInterval(sweepSla, 5 * 60 * 1000);          // cada 5 min
-  setInterval(sweepWarranties, 24 * 60 * 60 * 1000); // cada 24 h
+  setInterval(safe(sweepSla, 'sweepSla'), 5 * 60 * 1000);
+  setInterval(safe(sweepWarranties, 'sweepWarranties'), 24 * 60 * 60 * 1000);
   console.log('⏱️  Cron de SLA (5 min) y garantías (24 h) iniciado');
 }
 

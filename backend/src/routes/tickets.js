@@ -68,6 +68,22 @@ router.get('/', authenticate, async (req, res, next) => {
 });
 
 // ── POST /tickets ────────────────────────────────────────────────────────────
+// Valida que el usuario al que se asigna un ticket sea técnico.
+// TECH_ROLES viene de services/sla.js.
+async function assertAssigneeIsTech(tx, assignedToId) {
+  if (!assignedToId) return;
+  const u = await tx.user.findUnique({
+    where: { id: assignedToId },
+    select: { role: true, isActive: true, deletedAt: true },
+  });
+  if (!u || !u.isActive || u.deletedAt) {
+    const err = new Error('Usuario asignado no existe o está inactivo'); err.status = 400; throw err;
+  }
+  if (!TECH_ROLES.includes(u.role)) {
+    const err = new Error('Solo se puede asignar tickets a IT_TECH, IT_ADMIN o SUPER_ADMIN'); err.status = 400; throw err;
+  }
+}
+
 router.post('/', authenticate, async (req, res, next) => {
   try {
     const { title, description, priority = 'MEDIUM', category = 'TECH_SUPPORT', assetId, assignedToId } = req.body;
@@ -78,6 +94,7 @@ router.post('/', authenticate, async (req, res, next) => {
     const { resolveDue } = computeDueDates(priority, now);
 
     const created = await prisma.$transaction(async (tx) => {
+      await assertAssigneeIsTech(tx, assignedToId);
       const number = await nextTicketNumber(tx, now.getFullYear());
       return tx.ticket.create({
         data: {
@@ -187,6 +204,8 @@ router.patch('/:id/assign', authenticate, requireRole('IT_TECH'), async (req, re
     const { assignedToId } = req.body;
     const before = await prisma.ticket.findUnique({ where: { id } });
     if (!before) return res.status(404).json({ error: 'Ticket no encontrado' });
+    try { await assertAssigneeIsTech(prisma, assignedToId); }
+    catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
 
     const data = { assignedToId: assignedToId || null };
     if (assignedToId && before.status === 'OPEN') data.status = 'ASSIGNED';

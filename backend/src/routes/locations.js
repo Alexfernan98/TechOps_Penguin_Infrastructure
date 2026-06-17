@@ -18,7 +18,7 @@ router.get('/', authenticate, async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next) => {
+router.post('/', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
   try {
     const { slug, name, siteCode = 'PE1H' } = req.body;
     if (!slug || !name) return res.status(400).json({ error: 'slug y name son requeridos' });
@@ -28,7 +28,7 @@ router.post('/', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next
   } catch (err) { next(err); }
 });
 
-router.patch('/:slug', authenticate, requireRole('SUPER_ADMIN'), async (req, res, next) => {
+router.patch('/:slug', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
   try {
     const { slug } = req.params;
     const before = await prisma.location.findUnique({ where: { slug } });
@@ -44,6 +44,28 @@ router.patch('/:slug', authenticate, requireRole('SUPER_ADMIN'), async (req, res
     });
     await audit({ req, action: 'UPDATE', entityType: 'Location', entityId: slug, before, after });
     res.json({ location: after });
+  } catch (err) { next(err); }
+});
+
+// ── DELETE /api/locations/:slug ─────────────────────────────────────────────────
+router.delete('/:slug', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    const before = await prisma.location.findUnique({ where: { slug } });
+    if (!before) return res.status(404).json({ error: 'Ubicación no encontrada' });
+
+    const assets = await prisma.asset.count({ where: { locationSlug: slug } });
+    if (assets) {
+      return res.status(409).json({
+        error: 'No se puede eliminar la ubicación porque tiene activos vinculados.',
+        blockers: [`${assets} activo(s) en esta ubicación`],
+        suggestion: 'Movelos a otra ubicación primero, o desactivala en lugar de borrarla.',
+      });
+    }
+
+    await prisma.location.delete({ where: { slug } });
+    await audit({ req, action: 'DELETE', entityType: 'Location', entityId: slug, before });
+    res.json({ ok: true, deleted: { slug, name: before.name } });
   } catch (err) { next(err); }
 });
 

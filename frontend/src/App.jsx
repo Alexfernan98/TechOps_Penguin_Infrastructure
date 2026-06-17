@@ -45,7 +45,7 @@ export default function App() {
           <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN']}><UsersPage /></RequireRole>
         } />
         <Route path="/config" element={
-          <RequireRole roles={['SUPER_ADMIN']}><ConfigPage /></RequireRole>
+          <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN']}><ConfigPage /></RequireRole>
         } />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

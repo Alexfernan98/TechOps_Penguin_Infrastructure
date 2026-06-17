@@ -48,9 +48,14 @@ export default function DashboardPage() {
     </div>
   );
 
-  const k = d.kpis;
-  const statusData = d.assetsByStatus.map(s => ({ name: ASSET_STATUS_LABEL[s.status] || s.status, value: s.count, key: s.status }));
-  const slaGauge = [{ name: 'SLA', value: d.slaCompliance, fill: d.slaCompliance >= 90 ? '#10b981' : d.slaCompliance >= 75 ? '#f59e0b' : '#f43f5e' }];
+  const k = d.kpis || {};
+  const assetsByStatus      = Array.isArray(d.assetsByStatus)     ? d.assetsByStatus     : [];
+  const assetsByDepartment  = Array.isArray(d.assetsByDepartment) ? d.assetsByDepartment : [];
+  const ticketsByPriority   = Array.isArray(d.ticketsByPriority)  ? d.ticketsByPriority  : [];
+  const ticketsByMonth      = Array.isArray(d.ticketsByMonth)     ? d.ticketsByMonth     : [];
+  const slaCompliance       = typeof d.slaCompliance === 'number' ? d.slaCompliance      : 100;
+  const statusData = assetsByStatus.map(s => ({ name: ASSET_STATUS_LABEL[s.status] || s.status, value: s.count, key: s.status }));
+  const slaGauge = [{ name: 'SLA', value: slaCompliance, fill: slaCompliance >= 90 ? '#10b981' : slaCompliance >= 75 ? '#f59e0b' : '#f43f5e' }];
 
   return (
     <div>
@@ -85,13 +90,13 @@ export default function DashboardPage() {
 
         <Card title="Tickets abiertos por prioridad">
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={d.ticketsByPriority.map(p => ({ name: PRIORITY_LABEL[p.priority], count: p.count, key: p.priority }))} layout="vertical" margin={{ left: 10 }}>
+            <BarChart data={ticketsByPriority.map(p => ({ name: PRIORITY_LABEL[p.priority], count: p.count, key: p.priority }))} layout="vertical" margin={{ left: 10 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
               <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 12 }} />
               <Tooltip />
               <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                {d.ticketsByPriority.map(p => <Cell key={p.priority} fill={PRIORITY_COLORS[p.priority]} />)}
+                {ticketsByPriority.map(p => <Cell key={p.priority} fill={PRIORITY_COLORS[p.priority]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -106,7 +111,7 @@ export default function DashboardPage() {
               </RadialBarChart>
             </ResponsiveContainer>
             <div className="absolute inset-x-0 top-1/2 text-center">
-              <p className="text-3xl font-bold text-slate-800">{d.slaCompliance}%</p>
+              <p className="text-3xl font-bold text-slate-800">{slaCompliance}%</p>
               <p className="text-xs text-slate-400">resueltos en plazo</p>
             </div>
           </div>
@@ -116,7 +121,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Activos por departamento (top 8)">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={d.assetsByDepartment} layout="vertical" margin={{ left: 20 }}>
+            <BarChart data={assetsByDepartment} layout="vertical" margin={{ left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
               <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
@@ -128,7 +133,7 @@ export default function DashboardPage() {
 
         <Card title="Volumen de tickets (últimos 6 meses)">
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={d.ticketsByMonth}>
+            <LineChart data={ticketsByMonth}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
