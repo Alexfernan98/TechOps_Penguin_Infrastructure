@@ -86,7 +86,7 @@ export default function Sidebar({ open = false, onClose = () => {} }) {
           open ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         )}
       >
-        <div className="px-6 py-5 border-b border-slate-700/50 flex items-center justify-between">
+        <div className="h-16 px-6 border-b border-slate-700/50 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

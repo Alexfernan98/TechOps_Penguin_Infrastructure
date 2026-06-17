@@ -12,6 +12,7 @@ import Avatar, { shortName } from '@/components/ui/Avatar';
 import { AssetStatusBadge, ConditionText, ASSET_STATUS_LABEL, CONDITION_LABEL, AuditActionBadge } from '@/components/ui/Badge';
 import BarcodeScanner from '@/components/ui/BarcodeScanner';
 import UserPicker from '@/components/ui/UserPicker';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import useAuthStore from '@/store/authStore';
 
 const STATUSES   = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
@@ -219,6 +220,7 @@ function KV({ label, children }) {
 
 function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
   const { user: me } = useAuthStore();
+  const confirm = useConfirm();
   const canDelete = ['IT_ADMIN', 'SUPER_ADMIN'].includes(me?.role);
   const [asset, setAsset] = useState(null);
   const [history, setHistory] = useState([]);
@@ -233,7 +235,13 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
   useEffect(() => { load(); }, [load]);
 
   const hardDelete = async () => {
-    if (!window.confirm(`¿Eliminar DEFINITIVAMENTE el activo ${asset.tag}?\n\nEsta acción no se puede deshacer.`)) return;
+    const ok1 = await confirm({
+      title: `¿Eliminar definitivamente ${asset.tag}?`,
+      description: 'Esta acción no se puede deshacer.',
+      confirmLabel: 'Eliminar',
+      tone: 'danger',
+    });
+    if (!ok1) return;
     try {
       await assetsApi.remove(asset.id);
       toast.success(`Activo ${asset.tag} eliminado`);
@@ -247,12 +255,15 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
         if (data.counts.actas)       parts.push(`${data.counts.actas} acta(s) de entrega/devolución/baja`);
         if (data.counts.tickets)     parts.push(`${data.counts.tickets} ticket(s) (con comentarios y CSAT)`);
         const detail = parts.join('\n  • ');
-        const ok = window.confirm(
-          `El activo ${asset.tag} tiene historial vinculado:\n\n  • ${detail}\n\n` +
-          `Si continuás, se eliminará TODO lo anterior además del activo.\n` +
-          `Los snapshots quedan guardados en /audit para consulta posterior.\n\n` +
-          `¿Eliminar todo?`
-        );
+        const ok = await confirm({
+          title: `${asset.tag} tiene historial vinculado`,
+          description:
+            `  • ${detail}\n\n` +
+            `Si continuás, se eliminará TODO lo anterior además del activo. ` +
+            `Los snapshots quedan guardados en /audit para consulta posterior.`,
+          confirmLabel: 'Eliminar todo',
+          tone: 'danger',
+        });
         if (!ok) {
           toast('Operación cancelada — usá "Dar de baja" para conservar el historial.', { icon: 'ℹ️' });
           return;
