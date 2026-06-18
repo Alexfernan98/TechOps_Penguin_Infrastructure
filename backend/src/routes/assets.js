@@ -187,7 +187,14 @@ router.get('/:id', authenticate, async (req, res, next) => {
       include: {
         ...ASSET_INCLUDE,
         assignments: { include: { user: { select: HOLDER_SELECT }, assignedBy: { select: HOLDER_SELECT } }, orderBy: { assignedAt: 'desc' } },
-        actas: { select: { id: true, type: true, signedAt: true, pdfUrl: true, receptorId: true }, orderBy: { signedAt: 'desc' } },
+        actas: {
+          select: {
+            id: true, type: true, signedAt: true, pdfUrl: true, metadata: true,
+            receptor: { select: { id: true, name: true, nameFirst: true, nameLast: true } },
+            firmante: { select: { id: true, name: true, nameFirst: true, nameLast: true } },
+          },
+          orderBy: { signedAt: 'desc' },
+        },
       },
     });
     if (!asset) return res.status(404).json({ error: 'Activo no encontrado' });
@@ -205,7 +212,21 @@ router.get('/:id', authenticate, async (req, res, next) => {
     });
 
     const current = asset.assignments.find(a => a.returnedAt === null) || null;
-    res.json({ asset: { ...asset, assignedTo: current?.user || null }, history });
+    // Aplanamos metadata de cada acta a campos top-level (number, statusActa,
+    // signedDriveUrl, legacy, tipoBaja) — espejo de lo que hace flatten() en
+    // /routes/actas.js. Así el drawer del activo no necesita leer .metadata.
+    const flatActas = (asset.actas || []).map(ac => {
+      const meta = ac.metadata || {};
+      return {
+        ...ac,
+        number:         meta.number || null,
+        statusActa:     meta.status || 'pending_sign',
+        signedDriveUrl: meta.signedDriveUrl || null,
+        tipoBaja:       meta.tipoBaja || null,
+        legacy:         meta.legacy === true,
+      };
+    });
+    res.json({ asset: { ...asset, actas: flatActas, assignedTo: current?.user || null }, history });
   } catch (err) { next(err); }
 });
 

@@ -116,7 +116,12 @@ export default function ActasPage() {
             {!loading && filtered.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">Sin actas</td></tr>}
             {!loading && filtered.map(a => (
               <tr key={a.id} onClick={() => setSelectedId(a.id)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer">
-                <td className="px-4 py-3 text-sm font-mono text-slate-700">{a.number}</td>
+                <td className="px-4 py-3 text-sm font-mono text-slate-700">
+                  <div className="flex items-center gap-2">
+                    {a.number}
+                    {a.legacy && <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-200 text-slate-600 uppercase tracking-wide">Legacy</span>}
+                  </div>
+                </td>
                 <td className="px-4 py-3"><ActaTypeBadge type={a.type} /></td>
                 <td className="px-4 py-3 text-sm font-mono text-slate-600">{a.asset?.tag}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{a.type === 'RETIREMENT' ? '—' : shortName(a.receptor)}</td>
@@ -228,7 +233,7 @@ function ActaDrawer({ id, onClose, onRefresh }) {
         footer={
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <a href={resolveActaUrl(actasApi.pdfUrl(id))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Printer className="w-4 h-4" /> Imprimir / PDF</a>
+              {!acta.legacy && <a href={resolveActaUrl(actasApi.pdfUrl(id))} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50"><Printer className="w-4 h-4" /> Imprimir / PDF</a>}
               {canDelete && <button onClick={handleDelete} className="inline-flex items-center gap-2 px-3 py-2 border border-rose-200 text-rose-700 text-sm font-medium rounded-lg hover:bg-rose-50" title="Borrar acta (uso típico: limpiar pruebas)"><Trash2 className="w-4 h-4" /> Eliminar</button>}
             </div>
             <div className="flex items-center gap-2">
@@ -241,6 +246,7 @@ function ActaDrawer({ id, onClose, onRefresh }) {
         <div className="flex items-center gap-2 mb-3">
           <ActaTypeBadge type={acta.type} />
           <span className={`text-xs font-medium ${signed ? 'text-emerald-600' : 'text-amber-600'}`}>{statusLabel(acta.statusActa)}</span>
+          {acta.legacy && <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-200 text-slate-600 uppercase tracking-wide" title="Acta firmada antes del despliegue de NetHub — PDF original en Drive">Legacy</span>}
         </div>
         <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
           <div><p className="text-xs text-slate-400">Receptor</p><p className="text-slate-700">{acta.type === 'RETIREMENT' ? '— (sin receptor)' : shortName(acta.receptor)}</p></div>
