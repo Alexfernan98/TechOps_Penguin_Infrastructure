@@ -12,9 +12,15 @@ de IT, Networking, NOC y Ciberseguridad.
 
 ## Hito actual
 
-**Última release a `main`**: 2026-06-18 — [PR #19](https://github.com/Alexfernan98/NetHub_PE1H/pull/19)
+**Última release a `main`**: 2026-06-18 — **v0.7.0** ([PR #26](https://github.com/Alexfernan98/NetHub_PE1H/pull/26) · [tag](https://github.com/Alexfernan98/NetHub_PE1H/releases/tag/v0.7.0))
 
-**Lo que está desplegado** (Fases 1-5 completas + Etapa 2 de Actas):
+**Novedades v0.7.0**
+- 🆕 **Equipos compartidos** (PCs del NOC, equipos de turno rotativo): múltiples usuarios asignados con un responsable administrativo. Actas listan a los autorizados; bajas por daño piden firma del operador específico.
+- 🆕 **Restaurar bajas**: revertir activos retirados con motivo registrado en audit log.
+- 🆕 **Sort y filtros consistentes** en Activos, Tickets, Actas, Usuarios, Auditoría — botón ✕ por filtro, "Limpiar todo" verde, "Solo dados de baja" naranja.
+- 🆕 **Versionado SemVer** arrancado — Sidebar muestra la versión real del paquete.
+
+**Lo que está desplegado** (Fases 1-5 + Etapa 2 de Actas + v0.7.0):
 
 - ✅ **Autenticación** Google OAuth 2.0 restringida al dominio `@penguin.digital`,
   con refresh token persistido para integración con Drive.
@@ -45,7 +51,9 @@ de IT, Networking, NOC y Ciberseguridad.
 - ✅ **HTTPS self-signed** + soporte para acceso LAN vía `nip.io`.
 
 **En desarrollo / próximos hitos**:
-- 🟡 Carga masiva del inventario real durante recorrido por oficinas (en curso por el owner).
+- 🟡 Despliegue del servicio en VM Ubuntu 24.04 (planificación en curso).
+- 🟡 Backup automatizado de DB + carpetas Drive.
+- 🟡 Carga masiva del inventario real (post-despliegue) → camino a **v1.0.0**.
 - 🔴 Por definir: módulo de licencias, control de accesos, monitoreo.
 
 La app está en evolución constante — se documentan aquí los hitos visibles
