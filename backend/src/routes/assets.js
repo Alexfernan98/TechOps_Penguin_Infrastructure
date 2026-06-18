@@ -29,18 +29,21 @@ const ASSET_INCLUDE = {
   assignments: {
     where: { returnedAt: null },
     include: { user: { select: HOLDER_SELECT } },
-    orderBy: { assignedAt: 'desc' },
-    take: 1,
+    orderBy: [{ isPrimary: 'desc' }, { assignedAt: 'desc' }],
   },
 };
 
-// Aplana la asignación vigente en assignedTo para comodidad del frontend.
+// Aplana asignaciones activas: el primary va a assignedTo, el resto a
+// authorizedUsers. Para activos no-compartidos, authorizedUsers queda vacío.
 function shape(a) {
-  const current = a.assignments?.[0] || null;
+  const active = a.assignments || [];
+  const primary = active.find(x => x.isPrimary) || active[0] || null;
+  const others  = active.filter(x => x !== primary);
   return {
     ...a,
-    assignedTo: current?.user || null,
-    assignedAt: current?.assignedAt || null,
+    assignedTo: primary?.user || null,
+    assignedAt: primary?.assignedAt || null,
+    authorizedUsers: others.map(x => ({ ...x.user, assignmentId: x.id, assignedAt: x.assignedAt })),
     assignments: undefined,
   };
 }
@@ -211,7 +214,14 @@ router.get('/:id', authenticate, async (req, res, next) => {
       include: { user: { select: { id: true, name: true, nameFirst: true, nameLast: true } } },
     });
 
-    const current = asset.assignments.find(a => a.returnedAt === null) || null;
+    // El detalle trae TODAS las asignaciones (histórico). Para el drawer
+    // necesitamos también las activas separadas en primary (assignedTo) y
+    // secundarios (authorizedUsers) — espejo de lo que hace shape() en el listado.
+    const activeAssignments = asset.assignments.filter(a => a.returnedAt === null);
+    activeAssignments.sort((a, b) => (b.isPrimary === true) - (a.isPrimary === true));
+    const primaryAssignment = activeAssignments.find(a => a.isPrimary) || activeAssignments[0] || null;
+    const others = activeAssignments.filter(a => a !== primaryAssignment);
+    const authorizedUsers = others.map(a => ({ ...a.user, assignmentId: a.id, assignedAt: a.assignedAt }));
     // Aplanamos metadata de cada acta a campos top-level (number, statusActa,
     // signedDriveUrl, legacy, tipoBaja) — espejo de lo que hace flatten() en
     // /routes/actas.js. Así el drawer del activo no necesita leer .metadata.
@@ -226,7 +236,15 @@ router.get('/:id', authenticate, async (req, res, next) => {
         legacy:         meta.legacy === true,
       };
     });
-    res.json({ asset: { ...asset, actas: flatActas, assignedTo: current?.user || null }, history });
+    res.json({
+      asset: {
+        ...asset,
+        actas: flatActas,
+        assignedTo: primaryAssignment?.user || null,
+        authorizedUsers,
+      },
+      history,
+    });
   } catch (err) { next(err); }
 });
 
@@ -275,6 +293,7 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
           purchaseDate: b.purchaseDate ? new Date(b.purchaseDate) : null,
           warrantyUntil: b.warrantyUntil ? new Date(b.warrantyUntil) : null,
           accessories: b.accessories || null,
+          shared: b.shared === true,
           notes: b.notes || null,
         },
         include: ASSET_INCLUDE,
@@ -319,6 +338,7 @@ router.patch('/:id', authenticate, requireRole('IT_TECH'), async (req, res, next
       'evidenceFolderUrl', 'notes'];
     const data = {};
     for (const f of FIELDS) if (b[f] !== undefined) data[f] = b[f] || null;
+    if (b.shared !== undefined) data.shared = b.shared === true;
     if (b.barcode !== undefined) data.barcode = nextBarcode;
     if (b.purchaseDate  !== undefined) data.purchaseDate  = b.purchaseDate  ? new Date(b.purchaseDate)  : null;
     if (b.warrantyUntil !== undefined) data.warrantyUntil = b.warrantyUntil ? new Date(b.warrantyUntil) : null;
@@ -364,10 +384,14 @@ router.patch('/:id/status', authenticate, requireRole('IT_TECH'), async (req, re
 });
 
 // ── POST /assets/:id/assign ────────────────────────────────────────────────────
+// Para activos NO compartidos: cierra la asignación activa previa y crea una nueva como primary.
+// Para activos compartidos: acepta { userId, isPrimary, authorizedUserIds[] }.
+//   - userId define el responsable principal (primary). Si ya hay primary distinto, lo demota a no-primary.
+//   - authorizedUserIds reemplaza la lista completa de usuarios autorizados secundarios (excluyendo primary).
 router.post('/:id/assign', authenticate, requireRole('IT_TECH'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { userId, departmentSlug, notes } = req.body;
+    const { userId, departmentSlug, notes, isPrimary, authorizedUserIds } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId es requerido' });
 
     const [before, target] = await Promise.all([
@@ -376,13 +400,57 @@ router.post('/:id/assign', authenticate, requireRole('IT_TECH'), async (req, res
     ]);
     if (!before) return res.status(404).json({ error: 'Activo no encontrado' });
     if (!target || !target.isActive) return res.status(400).json({ error: 'Usuario destino inválido' });
-    if (before.status === 'ASSIGNED') return res.status(409).json({ error: 'El activo ya está asignado' });
+
+    if (!before.shared) {
+      // Comportamiento original: una sola asignación activa.
+      if (before.status === 'ASSIGNED') return res.status(409).json({ error: 'El activo ya está asignado' });
+    }
 
     const after = await prisma.$transaction(async (tx) => {
-      await tx.assetAssignment.updateMany({ where: { assetId: id, returnedAt: null }, data: { returnedAt: new Date() } });
-      await tx.assetAssignment.create({
-        data: { assetId: id, userId, assignedById: req.user.id, notes: notes || null },
-      });
+      if (!before.shared) {
+        await tx.assetAssignment.updateMany({ where: { assetId: id, returnedAt: null }, data: { returnedAt: new Date() } });
+        await tx.assetAssignment.create({
+          data: { assetId: id, userId, assignedById: req.user.id, notes: notes || null, isPrimary: true },
+        });
+      } else {
+        // Shared: gestionar primary + autorizados.
+        const makePrimary = isPrimary !== false; // por defecto el nuevo userId es primary
+        if (makePrimary) {
+          // Demotar primaries existentes.
+          await tx.assetAssignment.updateMany({
+            where: { assetId: id, returnedAt: null, isPrimary: true },
+            data: { isPrimary: false },
+          });
+        }
+        // ¿Existe ya assignment activo para este userId? upsert manual.
+        const existing = await tx.assetAssignment.findFirst({ where: { assetId: id, userId, returnedAt: null } });
+        if (existing) {
+          await tx.assetAssignment.update({ where: { id: existing.id }, data: { isPrimary: makePrimary, notes: notes || existing.notes } });
+        } else {
+          await tx.assetAssignment.create({
+            data: { assetId: id, userId, assignedById: req.user.id, notes: notes || null, isPrimary: makePrimary },
+          });
+        }
+        // Sincronizar autorizados secundarios si vienen en el body.
+        if (Array.isArray(authorizedUserIds)) {
+          const keep = new Set([userId, ...authorizedUserIds.filter(uid => uid && uid !== userId)]);
+          // Cerrar assignments activos de users que ya no están en la lista.
+          await tx.assetAssignment.updateMany({
+            where: { assetId: id, returnedAt: null, userId: { notIn: Array.from(keep) } },
+            data: { returnedAt: new Date() },
+          });
+          // Crear assignments faltantes para los autorizados nuevos.
+          for (const uid of authorizedUserIds) {
+            if (!uid || uid === userId) continue;
+            const ex = await tx.assetAssignment.findFirst({ where: { assetId: id, userId: uid, returnedAt: null } });
+            if (!ex) {
+              await tx.assetAssignment.create({
+                data: { assetId: id, userId: uid, assignedById: req.user.id, isPrimary: false },
+              });
+            }
+          }
+        }
+      }
       return tx.asset.update({
         where: { id },
         data: { status: 'ASSIGNED', departmentSlug: departmentSlug || target.departmentSlug || before.departmentSlug },
@@ -403,21 +471,37 @@ router.post('/:id/assign', authenticate, requireRole('IT_TECH'), async (req, res
 });
 
 // ── POST /assets/:id/unassign (devolución) ─────────────────────────────────────
+// Para activos compartidos acepta { userId } para devolver solo a un autorizado.
+// Si no se manda userId, se cierran todas las asignaciones (devolución total).
 router.post('/:id/unassign', authenticate, requireRole('IT_TECH'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { condition, notes } = req.body;
+    const { condition, notes, userId } = req.body;
     const before = await prisma.asset.findUnique({ where: { id } });
     if (!before) return res.status(404).json({ error: 'Activo no encontrado' });
 
     const after = await prisma.$transaction(async (tx) => {
+      const where = { assetId: id, returnedAt: null, ...(userId ? { userId } : {}) };
       await tx.assetAssignment.updateMany({
-        where: { assetId: id, returnedAt: null },
+        where,
         data: { returnedAt: new Date(), ...(notes ? { notes } : {}) },
       });
+      // ¿Quedan asignaciones activas? Si es shared y queda al menos una, status sigue ASSIGNED.
+      const remaining = await tx.assetAssignment.count({ where: { assetId: id, returnedAt: null } });
+      // Si el primary se fue pero quedan secundarios, promover al más antiguo a primary.
+      if (remaining > 0) {
+        const stillPrimary = await tx.assetAssignment.count({ where: { assetId: id, returnedAt: null, isPrimary: true } });
+        if (stillPrimary === 0) {
+          const next = await tx.assetAssignment.findFirst({
+            where: { assetId: id, returnedAt: null }, orderBy: { assignedAt: 'asc' },
+          });
+          if (next) await tx.assetAssignment.update({ where: { id: next.id }, data: { isPrimary: true } });
+        }
+      }
+      const status = remaining > 0 ? 'ASSIGNED' : 'AVAILABLE';
       return tx.asset.update({
         where: { id },
-        data: { status: 'AVAILABLE', departmentSlug: null, ...(condition ? { condition } : {}) },
+        data: { status, ...(remaining === 0 ? { departmentSlug: null } : {}), ...(condition ? { condition } : {}) },
         include: ASSET_INCLUDE,
       });
     });
@@ -449,6 +533,32 @@ router.patch('/:id/retire', authenticate, requireRole('IT_ADMIN'), async (req, r
     });
 
     await audit({ req, action: 'DELETE_LOGICAL', entityType: 'Asset', entityId: id, before, after: { ...after, reason } });
+    res.json({ asset: shape(after) });
+  } catch (err) { next(err); }
+});
+
+// ── PATCH /assets/:id/restore (revertir baja lógica) ──────────────────────────
+// Devuelve a AVAILABLE un activo dado de baja (deletedAt != null). Útil cuando
+// la baja se registró por error o se recuperó el equipo (ej. tras un robo).
+router.patch('/:id/restore', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    if (!reason) return res.status(400).json({ error: 'El motivo de la restauración es obligatorio' });
+
+    const before = await prisma.asset.findUnique({ where: { id } });
+    if (!before) return res.status(404).json({ error: 'Activo no encontrado' });
+    // Aceptamos restaurar tanto bajas lógicas (deletedAt) como activos en
+    // estado RETIRED/LOST sin deletedAt (cambios de status manuales).
+    const isRetired = before.deletedAt || ['RETIRED', 'LOST'].includes(before.status);
+    if (!isRetired) return res.status(409).json({ error: 'El activo no está dado de baja ni en estado retirado' });
+
+    const after = await prisma.asset.update({
+      where: { id },
+      data: { deletedAt: null, status: 'AVAILABLE' },
+      include: ASSET_INCLUDE,
+    });
+    await audit({ req, action: 'RESTORE', entityType: 'Asset', entityId: id, before, after: { ...after, reason } });
     res.json({ asset: shape(after) });
   } catch (err) { next(err); }
 });
