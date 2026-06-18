@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Monitor, Ticket, FileText, Bell, Users, ShieldCheck, Settings, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { LayoutDashboard, Monitor, Ticket, FileText, Bell, Users, ShieldCheck, Settings, X, ChevronDown, ArrowDownToLine, ArrowUpFromLine, Archive } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import useAuthStore from '@/store/authStore';
 import clsx from 'clsx';
 
@@ -16,7 +16,14 @@ const NAV_ITEMS = [
   { key: 'dashboard',      to: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
   { key: 'assets',         to: '/assets',         label: 'Inventario',     icon: Monitor },
   { key: 'tickets',        to: '/tickets',        label: 'Tickets',        icon: Ticket },
-  { key: 'actas',          to: '/actas',          label: 'Actas',          icon: FileText },
+  {
+    key: 'actas', label: 'Actas', icon: FileText,
+    children: [
+      { key: 'actas-delivery',   to: '/actas?type=DELIVERY',   label: 'Entregas',     icon: ArrowDownToLine },
+      { key: 'actas-return',     to: '/actas?type=RETURN',     label: 'Devoluciones', icon: ArrowUpFromLine },
+      { key: 'actas-retirement', to: '/actas?type=RETIREMENT', label: 'Bajas',        icon: Archive },
+    ],
+  },
   { key: 'notificaciones', to: '/notificaciones', label: 'Notificaciones', icon: Bell },
 ];
 
@@ -25,6 +32,59 @@ const ADMIN_ITEMS = [
   { key: 'audit',  to: '/audit',  label: 'Auditoría',     icon: ShieldCheck },
   { key: 'config', to: '/config', label: 'Configuración', icon: Settings },
 ];
+
+// NavGroup: item con sub-items expandibles. Se abre automático cuando la ruta
+// activa coincide con alguno de los hijos.
+function NavGroup({ label, Icon, basePath, children, onNavigate }) {
+  const location = useLocation();
+  const isInGroup = location.pathname.startsWith(basePath);
+  const [open, setOpen] = useState(isInGroup);
+
+  useEffect(() => { if (isInGroup) setOpen(true); }, [isInGroup]);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className={clsx(
+          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+          isInGroup
+            ? 'bg-slate-800 text-white'
+            : 'text-slate-400 hover:text-white hover:bg-slate-800'
+        )}
+      >
+        <Icon className="w-4 h-4 flex-shrink-0" />
+        <span className="flex-1 text-left">{label}</span>
+        <ChevronDown className={clsx('w-4 h-4 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="mt-0.5 ml-3 pl-3 border-l border-slate-700/50 space-y-0.5">
+          {children.map(({ key, to, label, icon: SubIcon }) => (
+            <NavLink
+              key={key}
+              to={to}
+              onClick={onNavigate}
+              className={({ isActive }) => {
+                // isActive de NavLink ignora querystring — comparamos manualmente.
+                const fullActive = (location.pathname + location.search) === to;
+                return clsx(
+                  'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                  fullActive
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                );
+              }}
+            >
+              <SubIcon className="w-4 h-4 flex-shrink-0" />
+              {label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NavItem({ to, label, Icon, onNavigate }) {
   return (
@@ -94,7 +154,7 @@ export default function Sidebar({ open = false, onClose = () => {} }) {
               </svg>
             </div>
             <div className="min-w-0">
-              <p className="text-white font-semibold text-sm leading-tight truncate">TechOpsHub</p>
+              <p className="text-white font-semibold text-sm leading-tight truncate">NetHub</p>
               <p className="text-slate-400 text-xs truncate">Penguin Infrastructure</p>
             </div>
           </div>
@@ -104,9 +164,10 @@ export default function Sidebar({ open = false, onClose = () => {} }) {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {mainItems.map(({ key, to, label, icon }) => (
-            <NavItem key={key} to={to} label={label} Icon={icon} onNavigate={onClose} />
-          ))}
+          {mainItems.map((item) => item.children
+            ? <NavGroup key={item.key} label={item.label} Icon={item.icon} basePath={`/${item.key}`} children={item.children} onNavigate={onClose} />
+            : <NavItem  key={item.key} to={item.to} label={item.label} Icon={item.icon} onNavigate={onClose} />
+          )}
 
           {adminItems.length > 0 && (
             <>

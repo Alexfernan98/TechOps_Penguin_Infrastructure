@@ -26,11 +26,26 @@ function publicOrigin(req) {
 }
 
 // ── Iniciar login con Google ──────────────────────────────────────────────────
+// Scopes:
+//   - profile/email: identidad básica
+//   - drive.file:    subir/leer archivos que la app crea o que el usuario abrió
+//   - drive.readonly:listar archivos a los que el usuario tiene acceso (carpetas
+//                    de actas en su Drive). Se restringe en la app a las 3
+//                    carpetas configuradas en .env.
+// accessType=offline + prompt=consent: fuerza a Google a devolver refresh_token
+// la primera vez (sin esto, solo lo da en consent inicial — perderíamos refresh
+// si el usuario ya había aprobado los scopes anteriores sin drive).
 router.get('/google', (req, res, next) => {
   passport.authenticate('google', {
-    scope:       ['profile', 'email'],
-    prompt:      'select_account',
-    session:     false,
+    scope: [
+      'profile',
+      'email',
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive.readonly',
+    ],
+    accessType: 'offline',
+    prompt:     'consent',
+    session:    false,
     callbackURL: `${publicOrigin(req)}/auth/google/callback`,
   })(req, res, next);
 });

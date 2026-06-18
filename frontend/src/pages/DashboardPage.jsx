@@ -61,7 +61,7 @@ export default function DashboardPage() {
     <div>
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-slate-800">Bienvenido, {user?.name?.split(' ')[0]} 👋</h2>
-        <p className="text-slate-500 mt-1">Panel de control — TechOpsHub Penguin Infrastructure</p>
+        <p className="text-slate-500 mt-1">Panel de control — NetHub Penguin Infrastructure</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

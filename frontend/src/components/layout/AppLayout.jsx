@@ -17,7 +17,7 @@ const PAGE_TITLES = {
 
 export default function AppLayout() {
   const { pathname } = useLocation();
-  const title = PAGE_TITLES[pathname] ?? 'TechOpsHub';
+  const title = PAGE_TITLES[pathname] ?? 'NetHub';
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (

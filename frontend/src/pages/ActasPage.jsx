@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Printer, Upload, ExternalLink, FileText, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { actasApi } from '@/api/actas';
@@ -27,10 +28,22 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('es-PY') : '—';
 const statusLabel = (s) => s === 'signed' ? 'Firmada' : 'Pendiente firma';
 
 export default function ActasPage() {
+  // Lee el tipo del querystring (?type=DELIVERY|RETURN|RETIREMENT) — la sidebar
+  // navega con esa convención. Cuando cambia el query, refresca el filtro.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlType = searchParams.get('type') || '';
+
   const [actas, setActas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [f, setF] = useState({ search: '', type: '', status: '' });
+  const [f, setF] = useState({ search: '', type: urlType, status: '' });
   const [selectedId, setSelectedId] = useState(null);
+
+  // Sincronizar filter.type ↔ querystring (navegación desde sidebar).
+  useEffect(() => { setF((prev) => prev.type === urlType ? prev : { ...prev, type: urlType }); }, [urlType]);
+  const setTypeFilter = (t) => {
+    setF({ ...f, type: t });
+    if (t) setSearchParams({ type: t }); else setSearchParams({});
+  };
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -53,6 +66,20 @@ export default function ActasPage() {
     signed: actas.filter(a => a.statusActa === 'signed').length,
   }), [actas]);
 
+  // Archivos de Drive (solo cuando hay un tipo seleccionado en el filtro).
+  // Listado read-only, complementa a las actas tracked en BD.
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveError, setDriveError] = useState(null);
+  useEffect(() => {
+    if (!f.type) { setDriveFiles([]); setDriveError(null); return; }
+    setDriveLoading(true); setDriveError(null);
+    import('@/api/drive').then(({ driveApi }) => driveApi.listActas(f.type))
+      .then(({ files }) => setDriveFiles(files || []))
+      .catch(e => setDriveError(e.response?.data?.error || e.message))
+      .finally(() => setDriveLoading(false));
+  }, [f.type]);
+
   return (
     <div>
       <div className="mb-6">
@@ -71,7 +98,7 @@ export default function ActasPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={f.search} onChange={e => setF({ ...f, search: e.target.value })} placeholder="Buscar por N°, TAG o receptor…" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
         </div>
-        <select value={f.type} onChange={e => setF({ ...f, type: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Tipo</option>{TYPES.map(t => <option key={t} value={t}>{ACTA_TYPE_LABEL[t]}</option>)}</select>
+        <select value={f.type} onChange={e => setTypeFilter(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Tipo</option>{TYPES.map(t => <option key={t} value={t}>{ACTA_TYPE_LABEL[t]}</option>)}</select>
         <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Estado</option><option value="pending_sign">Pendiente firma</option><option value="signed">Firmada</option></select>
       </div>
 
@@ -102,6 +129,56 @@ export default function ActasPage() {
           </tbody>
         </table>
       </div>
+
+      {f.type && (
+        <div className="mt-6">
+          <div className="flex items-baseline justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-700">
+              Archivos en Drive · {ACTA_TYPE_LABEL[f.type]}
+            </h3>
+            <span className="text-xs text-slate-400">
+              {driveLoading ? 'Cargando…' : `${driveFiles.length} archivo${driveFiles.length === 1 ? '' : 's'}`}
+            </span>
+          </div>
+          {driveError && (
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700 mb-3">
+              No se pudo leer Drive: {driveError}
+              <p className="text-xs mt-1 text-rose-600">
+                Si dice "tokens", cerrá sesión y volvé a entrar con Google para autorizar Drive.
+              </p>
+            </div>
+          )}
+          {!driveLoading && !driveError && driveFiles.length === 0 && (
+            <p className="text-sm text-slate-400 py-4 text-center bg-white rounded-xl border border-slate-200">
+              No hay archivos en la carpeta de Drive de {ACTA_TYPE_LABEL[f.type].toLowerCase()}s.
+            </p>
+          )}
+          {driveFiles.length > 0 && (
+            <ul className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+              {driveFiles.map(f => (
+                <li key={f.id}>
+                  <a
+                    href={f.webViewLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50"
+                  >
+                    <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{f.name}</p>
+                      <p className="text-xs text-slate-400">
+                        {fmtDate(f.modifiedTime)}
+                        {f.owners?.[0]?.displayName ? ` · ${f.owners[0].displayName}` : ''}
+                      </p>
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-slate-300 flex-shrink-0" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       {selectedId && <ActaDrawer id={selectedId} onClose={() => setSelectedId(null)} onRefresh={reload} />}
     </div>
