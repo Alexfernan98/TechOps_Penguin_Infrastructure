@@ -1,7 +1,7 @@
 {
-  "name": "techopshub-backend",
-  "version": "0.1.0",
-  "description": "TechOpsHub API — Penguin Infrastructure S.A.",
+  "name": "nethub-backend",
+  "version": "0.7.0",
+  "description": "NetHub API — Penguin Infrastructure S.A.",
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",

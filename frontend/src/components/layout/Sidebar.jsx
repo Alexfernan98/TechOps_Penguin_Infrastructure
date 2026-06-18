@@ -3,6 +3,7 @@ import { LayoutDashboard, Monitor, Ticket, FileText, Bell, Users, ShieldCheck, S
 import { useEffect, useState } from 'react';
 import useAuthStore from '@/store/authStore';
 import clsx from 'clsx';
+import { version as APP_VERSION } from '../../../package.json';
 
 const ROUTES_BY_ROLE = {
   SUPER_ADMIN: ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
@@ -180,7 +181,7 @@ export default function Sidebar({ open = false, onClose = () => {} }) {
         </nav>
 
         <div className="px-6 py-4 border-t border-slate-700/50">
-          <p className="text-xs text-slate-500">v0.6.0 — Mobile-ready</p>
+          <p className="text-xs text-slate-500">NetHub v{APP_VERSION}</p>
         </div>
       </aside>
     </>
