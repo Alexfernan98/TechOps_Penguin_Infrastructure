@@ -122,9 +122,15 @@ router.get('/export', authenticate, requireRole('IT_TECH'), async (req, res, nex
 
 // Construye el filtro Prisma compartido por list y export.
 function buildWhere(req) {
-  const { category, status, condition, dept, location, user, search, includeInactive } = req.query;
+  const { category, status, condition, dept, location, user, search, includeInactive, onlyInactive } = req.query;
   const where = {};
-  if (includeInactive !== 'true') where.deletedAt = null;
+  if (onlyInactive === 'true') {
+    // Solo dados de baja: lógicas (deletedAt) o por status RETIRED/LOST.
+    // Lo metemos en AND para no chocar con el OR de search si está presente.
+    where.AND = [{ OR: [{ deletedAt: { not: null } }, { status: { in: ['RETIRED', 'LOST'] } }] }];
+  } else if (includeInactive !== 'true') {
+    where.deletedAt = null;
+  }
   if (category)  where.categorySlug   = category;
   if (status)    where.status         = status;
   if (condition) where.condition      = condition;
@@ -160,7 +166,9 @@ router.get('/', authenticate, async (req, res, next) => {
       const where = buildWhere(req);
       const page    = Math.max(1, parseInt(req.query.page || '1', 10));
       const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage || '15', 10)));
-      const sortBy  = ['tag', 'brand', 'createdAt', 'warrantyUntil', 'status'].includes(req.query.sortBy) ? req.query.sortBy : 'tag';
+      const SORT_WHITELIST = ['tag', 'brand', 'model', 'serialNumber', 'createdAt',
+        'warrantyUntil', 'status', 'condition', 'categorySlug', 'locationSlug'];
+      const sortBy  = SORT_WHITELIST.includes(req.query.sortBy) ? req.query.sortBy : 'tag';
       const sortDir = req.query.sortDir === 'desc' ? 'desc' : 'asc';
 
       const [total, assets] = await Promise.all([

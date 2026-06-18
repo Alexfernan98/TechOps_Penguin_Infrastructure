@@ -1,7 +1,7 @@
 {
-  "name": "techopshub-frontend",
-  "version": "0.1.0",
-  "description": "TechOpsHub UI — Penguin Infrastructure S.A.",
+  "name": "nethub-frontend",
+  "version": "0.7.0",
+  "description": "NetHub UI — Penguin Infrastructure S.A.",
   "type": "module",
   "scripts": {
     "dev": "vite",

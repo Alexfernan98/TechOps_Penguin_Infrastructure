@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { UserPlus, Search } from 'lucide-react';
+import { SortableTh, FilterSelect, ClearFiltersButton } from '@/components/ui/TableFilters';
 import { usersApi } from '@/api/users';
 import { departmentsApi } from '@/api/org';
 import Drawer from '@/components/ui/Drawer';
@@ -26,6 +27,7 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState('');
+  const [sort, setSort] = useState({ by: 'name', dir: 'asc' });
 
   const [selected, setSelected]     = useState(null);
   const [showInvite, setShowInvite] = useState(false);
@@ -43,7 +45,7 @@ export default function UsersPage() {
   useEffect(() => { reload(); }, []);
 
   const filtered = useMemo(() => {
-    return users.filter(u => {
+    const list = users.filter(u => {
       if (roleFilter && u.role !== roleFilter) return false;
       if (deptFilter && u.departmentSlug !== deptFilter) return false;
       if (activeFilter === 'active' && !u.isActive) return false;
@@ -54,7 +56,26 @@ export default function UsersPage() {
       }
       return true;
     });
-  }, [users, search, roleFilter, deptFilter, activeFilter]);
+    const accessors = {
+      name:           u => (shortName(u) || '').toLowerCase(),
+      email:          u => (u.email || '').toLowerCase(),
+      role:           u => ROLES.indexOf(u.role),
+      departmentSlug: u => deptName(u.departmentSlug, depts).toLowerCase(),
+      ci:             u => (u.ci || '').toLowerCase(),
+      lastLoginAt:    u => u.lastLoginAt ? new Date(u.lastLoginAt).getTime() : 0,
+      isActive:       u => u.isActive ? 1 : 0,
+    };
+    const getter = accessors[sort.by] || accessors.name;
+    return [...list].sort((a, b) => {
+      const av = getter(a); const bv = getter(b);
+      if (av < bv) return sort.dir === 'asc' ? -1 : 1;
+      if (av > bv) return sort.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [users, depts, search, roleFilter, deptFilter, activeFilter, sort]);
+
+  const toggleSort = (by) => setSort(s => ({ by, dir: s.by === by && s.dir === 'asc' ? 'desc' : 'asc' }));
+  const clearFilters = () => { setSearch(''); setRoleFilter(''); setDeptFilter(''); setActiveFilter(''); };
 
   return (
     <div>
@@ -81,19 +102,10 @@ export default function UsersPage() {
             className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500"
           />
         </div>
-        <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
-          <option value="">Todos los roles</option>
-          {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-        <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
-          <option value="">Todos los departamentos</option>
-          {depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}
-        </select>
-        <select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm">
-          <option value="">Activos e inactivos</option>
-          <option value="active">Solo activos</option>
-          <option value="inactive">Solo inactivos</option>
-        </select>
+        <FilterSelect value={roleFilter}   onChange={setRoleFilter}   placeholder="Todos los roles"          options={ROLES.map(r => ({ value: r, label: r }))} />
+        <FilterSelect value={deptFilter}   onChange={setDeptFilter}   placeholder="Todos los departamentos"  options={depts.map(d => ({ value: d.slug, label: d.name }))} />
+        <FilterSelect value={activeFilter} onChange={setActiveFilter} placeholder="Activos e inactivos"      options={[{ value: 'active', label: 'Solo activos' }, { value: 'inactive', label: 'Solo inactivos' }]} />
+        <ClearFiltersButton onClick={clearFilters} />
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">{error}</div>}
@@ -102,13 +114,13 @@ export default function UsersPage() {
         <table className="w-full">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-left text-xs font-semibold text-slate-500 uppercase">
-              <th className="px-4 py-3">Usuario</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Rol</th>
-              <th className="px-4 py-3">Departamento</th>
-              <th className="px-4 py-3">CI</th>
-              <th className="px-4 py-3">Última sesión</th>
-              <th className="px-4 py-3">Estado</th>
+              <SortableTh sort={sort} by="name"           onClick={toggleSort}>Usuario</SortableTh>
+              <SortableTh sort={sort} by="email"          onClick={toggleSort}>Email</SortableTh>
+              <SortableTh sort={sort} by="role"           onClick={toggleSort}>Rol</SortableTh>
+              <SortableTh sort={sort} by="departmentSlug" onClick={toggleSort}>Departamento</SortableTh>
+              <SortableTh sort={sort} by="ci"             onClick={toggleSort}>CI</SortableTh>
+              <SortableTh sort={sort} by="lastLoginAt"    onClick={toggleSort}>Última sesión</SortableTh>
+              <SortableTh sort={sort} by="isActive"       onClick={toggleSort}>Estado</SortableTh>
             </tr>
           </thead>
           <tbody>

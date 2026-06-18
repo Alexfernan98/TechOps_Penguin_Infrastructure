@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Search, Upload, Download, ChevronRight, ChevronLeft, AlertTriangle, History, ArrowUpDown, Camera, ScanLine, ExternalLink } from 'lucide-react';
+import { Plus, Search, Upload, Download, ChevronRight, ChevronLeft, AlertTriangle, History, Camera, ScanLine, ExternalLink } from 'lucide-react';
+import { SortableTh, FilterSelect, ClearFiltersButton } from '@/components/ui/TableFilters';
 import toast from 'react-hot-toast';
 import { assetsApi } from '@/api/assets';
 import { actasApi } from '@/api/actas';
@@ -40,7 +41,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [warranty, setWarranty] = useState({ assets: [], count: 0 });
 
-  const [f, setF] = useState({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', includeInactive: '' });
+  const [f, setF] = useState({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', onlyInactive: '' });
   const [sort, setSort] = useState({ by: 'tag', dir: 'asc' });
   const [page, setPage] = useState(1);
 
@@ -106,7 +107,7 @@ export default function AssetsPage() {
   useEffect(() => { setPage(1); }, [f]);
 
   const toggleSort = (by) => setSort(s => ({ by, dir: s.by === by && s.dir === 'asc' ? 'desc' : 'asc' }));
-  const clearFilters = () => setF({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', includeInactive: '' });
+  const clearFilters = () => setF({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', onlyInactive: '' });
 
   const doExport = () => { window.open(`${API_BASE}${assetsApi.exportUrl(params)}`, '_blank'); };
 
@@ -149,17 +150,23 @@ export default function AssetsPage() {
           <input value={f.search} onChange={e => setF({ ...f, search: e.target.value })} placeholder="Buscar por TAG, marca, modelo, serial, usuario…" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
         </div>
         <div className="grid grid-cols-2 md:flex md:flex-wrap items-stretch md:items-center gap-2">
-          <select value={f.category} onChange={e => setF({ ...f, category: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Categoría</option>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select>
-          <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Estado</option>{STATUSES.map(s => <option key={s} value={s}>{ASSET_STATUS_LABEL[s]}</option>)}</select>
-          <select value={f.condition} onChange={e => setF({ ...f, condition: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Condición</option>{CONDITIONS.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}</select>
-          <select value={f.dept} onChange={e => setF({ ...f, dept: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Departamento</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select>
-          <select value={f.location} onChange={e => setF({ ...f, location: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Ubicación</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select>
-          <select value={f.user} onChange={e => setF({ ...f, user: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Usuario</option>{users.map(u => <option key={u.id} value={u.id}>{shortName(u)}</option>)}</select>
-          <label className="inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={f.includeInactive === 'true'} onChange={e => setF({ ...f, includeInactive: e.target.checked ? 'true' : '' })} />
-            Mostrar dados de baja
-          </label>
-          <button onClick={clearFilters} className="col-span-2 md:col-auto px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpiar</button>
+          <FilterSelect value={f.category}  onChange={v => setF({ ...f, category: v })}  placeholder="Todas las categorías"   options={cats.map(c => ({ value: c.slug, label: c.name }))} />
+          <FilterSelect value={f.status}    onChange={v => setF({ ...f, status: v })}    placeholder="Cualquier estado"       options={STATUSES.map(s => ({ value: s, label: ASSET_STATUS_LABEL[s] }))} />
+          <FilterSelect value={f.condition} onChange={v => setF({ ...f, condition: v })} placeholder="Cualquier condición"    options={CONDITIONS.map(c => ({ value: c, label: CONDITION_LABEL[c] }))} />
+          <FilterSelect value={f.dept}      onChange={v => setF({ ...f, dept: v })}      placeholder="Todos los departamentos" options={depts.map(d => ({ value: d.slug, label: d.name }))} />
+          <FilterSelect value={f.location}  onChange={v => setF({ ...f, location: v })}  placeholder="Todas las ubicaciones"  options={locs.map(l => ({ value: l.slug, label: l.name }))} />
+          <FilterSelect value={f.user}      onChange={v => setF({ ...f, user: v })}      placeholder="Cualquier usuario"      options={users.map(u => ({ value: u.id, label: shortName(u) }))} />
+          <button
+            onClick={() => setF({ ...f, onlyInactive: f.onlyInactive === 'true' ? '' : 'true' })}
+            className={`col-span-2 md:col-auto px-3 py-2 text-sm font-medium rounded-lg ${
+              f.onlyInactive === 'true'
+                ? 'bg-amber-700 hover:bg-amber-800 text-white'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+            }`}
+          >
+            Solo dados de baja{f.onlyInactive === 'true' ? ' ✓' : ''}
+          </button>
+          <ClearFiltersButton onClick={clearFilters} />
         </div>
       </div>
 
@@ -168,15 +175,15 @@ export default function AssetsPage() {
         <table className="w-full min-w-[800px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-left text-xs font-semibold text-slate-500 uppercase">
-              <th className="px-4 py-3 cursor-pointer" onClick={() => toggleSort('tag')}><span className="inline-flex items-center gap-1">TAG <ArrowUpDown className="w-3 h-3" /></span></th>
-              <th className="px-4 py-3">Categoría</th>
-              <th className="px-4 py-3 cursor-pointer" onClick={() => toggleSort('brand')}><span className="inline-flex items-center gap-1">Marca / Modelo <ArrowUpDown className="w-3 h-3" /></span></th>
-              <th className="px-4 py-3">Serial</th>
-              <th className="px-4 py-3">Estado</th>
-              <th className="px-4 py-3">Condición</th>
+              <SortableTh sort={sort} by="tag"           onClick={toggleSort}>TAG</SortableTh>
+              <SortableTh sort={sort} by="categorySlug"  onClick={toggleSort}>Categoría</SortableTh>
+              <SortableTh sort={sort} by="brand"         onClick={toggleSort}>Marca / Modelo</SortableTh>
+              <SortableTh sort={sort} by="serialNumber"  onClick={toggleSort}>Serial</SortableTh>
+              <SortableTh sort={sort} by="status"        onClick={toggleSort}>Estado</SortableTh>
+              <SortableTh sort={sort} by="condition"     onClick={toggleSort}>Condición</SortableTh>
               <th className="px-4 py-3">Asignado a</th>
-              <th className="px-4 py-3">Ubicación</th>
-              <th className="px-4 py-3">Garantía</th>
+              <SortableTh sort={sort} by="locationSlug"  onClick={toggleSort}>Ubicación</SortableTh>
+              <SortableTh sort={sort} by="warrantyUntil" onClick={toggleSort}>Garantía</SortableTh>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>

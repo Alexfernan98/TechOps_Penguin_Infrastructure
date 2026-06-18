@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Printer, Upload, ExternalLink, FileText, Trash2 } from 'lucide-react';
+import { SortableTh, FilterSelect, ClearFiltersButton } from '@/components/ui/TableFilters';
 import toast from 'react-hot-toast';
 import { actasApi } from '@/api/actas';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
@@ -46,6 +47,7 @@ export default function ActasPage() {
   const [actas, setActas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [f, setF] = useState({ search: '', type: urlType, status: '' });
+  const [sort, setSort] = useState({ by: 'signedAt', dir: 'desc' });
   const [selectedId, setSelectedId] = useState(null);
 
   // Sincronizar filter.type ↔ querystring (navegación desde sidebar).
@@ -63,12 +65,33 @@ export default function ActasPage() {
   }, []);
   useEffect(() => { reload(); }, [reload]);
 
-  const filtered = useMemo(() => actas.filter(a => {
-    if (f.type && a.type !== f.type) return false;
-    if (f.status && a.statusActa !== f.status) return false;
-    if (f.search) { const s = f.search.toLowerCase(); if (![a.number, a.asset?.tag, a.receptor?.name].some(v => (v || '').toLowerCase().includes(s))) return false; }
-    return true;
-  }), [actas, f]);
+  const filtered = useMemo(() => {
+    const list = actas.filter(a => {
+      if (f.type && a.type !== f.type) return false;
+      if (f.status && a.statusActa !== f.status) return false;
+      if (f.search) { const s = f.search.toLowerCase(); if (![a.number, a.asset?.tag, a.receptor?.name].some(v => (v || '').toLowerCase().includes(s))) return false; }
+      return true;
+    });
+    const accessors = {
+      number:    a => a.number || '',
+      type:      a => a.type || '',
+      asset:     a => (a.asset?.tag || '').toLowerCase(),
+      receptor:  a => (shortName(a.receptor) || '~').toLowerCase(),
+      firmante:  a => (shortName(a.firmante) || '').toLowerCase(),
+      signedAt:  a => a.signedAt ? new Date(a.signedAt).getTime() : 0,
+      status:    a => a.statusActa || '',
+    };
+    const getter = accessors[sort.by] || accessors.signedAt;
+    return [...list].sort((a, b) => {
+      const av = getter(a); const bv = getter(b);
+      if (av < bv) return sort.dir === 'asc' ? -1 : 1;
+      if (av > bv) return sort.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [actas, f, sort]);
+
+  const toggleSort = (by) => setSort(s => ({ by, dir: s.by === by && s.dir === 'asc' ? 'desc' : 'asc' }));
+  const clearFilters = () => { setF({ search: '', type: '', status: '' }); setSearchParams({}); };
 
   const kpis = useMemo(() => ({
     total: actas.length,
@@ -108,17 +131,23 @@ export default function ActasPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={f.search} onChange={e => setF({ ...f, search: e.target.value })} placeholder="Buscar por N°, TAG o receptor…" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
         </div>
-        <select value={f.type} onChange={e => setTypeFilter(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Tipo</option>{TYPES.map(t => <option key={t} value={t}>{ACTA_TYPE_LABEL[t]}</option>)}</select>
-        <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Estado</option><option value="pending_sign">Pendiente firma</option><option value="signed">Firmada</option></select>
+        <FilterSelect value={f.type}   onChange={setTypeFilter}                placeholder="Cualquier tipo"   options={TYPES.map(t => ({ value: t, label: ACTA_TYPE_LABEL[t] }))} />
+        <FilterSelect value={f.status} onChange={v => setF({ ...f, status: v })} placeholder="Cualquier estado" options={[{ value: 'pending_sign', label: 'Pendiente firma' }, { value: 'signed', label: 'Firmada' }]} />
+        <ClearFiltersButton onClick={clearFilters} />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <table className="w-full">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-left text-xs font-semibold text-slate-500 uppercase">
-              <th className="px-4 py-3">N°</th><th className="px-4 py-3">Tipo</th><th className="px-4 py-3">Activo</th>
-              <th className="px-4 py-3">Receptor</th><th className="px-4 py-3">Firmante</th><th className="px-4 py-3">Fecha</th>
-              <th className="px-4 py-3">Estado</th><th className="px-4 py-3">Drive</th>
+              <SortableTh sort={sort} by="number"   onClick={toggleSort}>N°</SortableTh>
+              <SortableTh sort={sort} by="type"     onClick={toggleSort}>Tipo</SortableTh>
+              <SortableTh sort={sort} by="asset"    onClick={toggleSort}>Activo</SortableTh>
+              <SortableTh sort={sort} by="receptor" onClick={toggleSort}>Receptor</SortableTh>
+              <SortableTh sort={sort} by="firmante" onClick={toggleSort}>Firmante</SortableTh>
+              <SortableTh sort={sort} by="signedAt" onClick={toggleSort}>Fecha</SortableTh>
+              <SortableTh sort={sort} by="status"   onClick={toggleSort}>Estado</SortableTh>
+              <th className="px-4 py-3">Drive</th>
             </tr>
           </thead>
           <tbody>

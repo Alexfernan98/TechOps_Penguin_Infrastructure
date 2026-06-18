@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, Search, LayoutGrid, List, Star, Lock } from 'lucide-react';
+import { SortableTh, FilterSelect, ClearFiltersButton } from '@/components/ui/TableFilters';
 import toast from 'react-hot-toast';
 import { ticketsApi } from '@/api/tickets';
 import { assetsApi } from '@/api/assets';
@@ -28,6 +29,7 @@ export default function TicketsPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('list');
   const [f, setF] = useState({ search: '', status: '', priority: '', assigneeId: '' });
+  const [sort, setSort] = useState({ by: 'createdAt', dir: 'desc' });
   const [selectedId, setSelectedId] = useState(null);
   const [showNew, setShowNew] = useState(false);
 
@@ -41,13 +43,35 @@ export default function TicketsPage() {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { if (isTech) usersApi.pick().then(u => setTechs(u.filter(x => ['IT_TECH', 'IT_ADMIN', 'SUPER_ADMIN'].includes(x.role)))).catch(() => {}); }, [isTech]);
 
-  const filtered = useMemo(() => tickets.filter(t => {
-    if (f.status && t.status !== f.status) return false;
-    if (f.priority && t.priority !== f.priority) return false;
-    if (f.assigneeId && t.assignedToId !== f.assigneeId) return false;
-    if (f.search) { const s = f.search.toLowerCase(); if (![t.number, t.title].some(v => (v || '').toLowerCase().includes(s))) return false; }
-    return true;
-  }), [tickets, f]);
+  const filtered = useMemo(() => {
+    const list = tickets.filter(t => {
+      if (f.status && t.status !== f.status) return false;
+      if (f.priority && t.priority !== f.priority) return false;
+      if (f.assigneeId && t.assignedToId !== f.assigneeId) return false;
+      if (f.search) { const s = f.search.toLowerCase(); if (![t.number, t.title].some(v => (v || '').toLowerCase().includes(s))) return false; }
+      return true;
+    });
+    const accessors = {
+      number:      t => t.number || '',
+      title:       t => (t.title || '').toLowerCase(),
+      priority:    t => ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].indexOf(t.priority),
+      status:      t => (t.status || ''),
+      createdBy:   t => (shortName(t.createdBy) || '').toLowerCase(),
+      assignedTo:  t => (shortName(t.assignedTo) || '~').toLowerCase(),
+      sla:         t => t.sla?.dueAt ? new Date(t.sla.dueAt).getTime() : Infinity,
+      createdAt:   t => t.createdAt ? new Date(t.createdAt).getTime() : 0,
+    };
+    const getter = accessors[sort.by] || accessors.createdAt;
+    return [...list].sort((a, b) => {
+      const av = getter(a); const bv = getter(b);
+      if (av < bv) return sort.dir === 'asc' ? -1 : 1;
+      if (av > bv) return sort.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [tickets, f, sort]);
+
+  const toggleSort = (by) => setSort(s => ({ by, dir: s.by === by && s.dir === 'asc' ? 'desc' : 'asc' }));
+  const clearFilters = () => setF({ search: '', status: '', priority: '', assigneeId: '' });
 
   const kpis = useMemo(() => ({
     open: tickets.filter(t => ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'PENDING_USER', 'REOPENED'].includes(t.status)).length,
@@ -76,9 +100,10 @@ export default function TicketsPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={f.search} onChange={e => setF({ ...f, search: e.target.value })} placeholder="Buscar por N° o título…" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
         </div>
-        <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Estado</option>{STATUSES.map(s => <option key={s} value={s}>{TICKET_STATUS_LABEL[s]}</option>)}</select>
-        <select value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Prioridad</option>{PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</select>
-        {isTech && <select value={f.assigneeId} onChange={e => setF({ ...f, assigneeId: e.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Técnico</option>{techs.map(t => <option key={t.id} value={t.id}>{shortName(t)}</option>)}</select>}
+        <FilterSelect value={f.status}     onChange={v => setF({ ...f, status: v })}     placeholder="Cualquier estado"    options={STATUSES.map(s => ({ value: s, label: TICKET_STATUS_LABEL[s] }))} />
+        <FilterSelect value={f.priority}   onChange={v => setF({ ...f, priority: v })}   placeholder="Cualquier prioridad" options={PRIORITIES.map(p => ({ value: p, label: PRIORITY_LABEL[p] }))} />
+        {isTech && <FilterSelect value={f.assigneeId} onChange={v => setF({ ...f, assigneeId: v })} placeholder="Cualquier técnico" options={techs.map(t => ({ value: t.id, label: shortName(t) }))} />}
+        <ClearFiltersButton onClick={clearFilters} />
         <div className="flex rounded-lg border border-slate-200 overflow-hidden">
           <button onClick={() => setView('list')} className={`px-3 py-2 ${view === 'list' ? 'bg-blue-600 text-white' : 'text-slate-500'}`}><List className="w-4 h-4" /></button>
           <button onClick={() => setView('kanban')} className={`px-3 py-2 ${view === 'kanban' ? 'bg-blue-600 text-white' : 'text-slate-500'}`}><LayoutGrid className="w-4 h-4" /></button>
@@ -86,7 +111,7 @@ export default function TicketsPage() {
       </div>
 
       {loading ? <p className="text-slate-400 text-center py-10">Cargando…</p>
-        : view === 'list' ? <TicketTable tickets={filtered} onSelect={setSelectedId} />
+        : view === 'list' ? <TicketTable tickets={filtered} sort={sort} toggleSort={toggleSort} onSelect={setSelectedId} />
         : <TicketKanban tickets={filtered} onSelect={setSelectedId} />}
 
       {selectedId && <TicketDrawer id={selectedId} me={me} isTech={isTech} techs={techs} onClose={() => setSelectedId(null)} onRefresh={reload} />}
@@ -95,15 +120,20 @@ export default function TicketsPage() {
   );
 }
 
-function TicketTable({ tickets, onSelect }) {
+function TicketTable({ tickets, sort, toggleSort, onSelect }) {
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <table className="w-full">
         <thead className="bg-slate-50 border-b border-slate-200">
           <tr className="text-left text-xs font-semibold text-slate-500 uppercase">
-            <th className="px-4 py-3">N°</th><th className="px-4 py-3">Título</th><th className="px-4 py-3">Prioridad</th>
-            <th className="px-4 py-3">Estado</th><th className="px-4 py-3">Solicitante</th><th className="px-4 py-3">Técnico</th>
-            <th className="px-4 py-3">SLA</th><th className="px-4 py-3">Creado</th>
+            <SortableTh sort={sort} by="number"     onClick={toggleSort}>N°</SortableTh>
+            <SortableTh sort={sort} by="title"      onClick={toggleSort}>Título</SortableTh>
+            <SortableTh sort={sort} by="priority"   onClick={toggleSort}>Prioridad</SortableTh>
+            <SortableTh sort={sort} by="status"     onClick={toggleSort}>Estado</SortableTh>
+            <SortableTh sort={sort} by="createdBy"  onClick={toggleSort}>Solicitante</SortableTh>
+            <SortableTh sort={sort} by="assignedTo" onClick={toggleSort}>Técnico</SortableTh>
+            <SortableTh sort={sort} by="sla"        onClick={toggleSort}>SLA</SortableTh>
+            <SortableTh sort={sort} by="createdAt"  onClick={toggleSort}>Creado</SortableTh>
           </tr>
         </thead>
         <tbody>
