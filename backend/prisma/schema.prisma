@@ -92,6 +92,9 @@ model User {
   isActive       Boolean   @default(true)
   generic        Boolean   @default(false)
   notifPrefs     Json?
+  googleAccessToken  String?   @db.Text
+  googleRefreshToken String?   @db.Text
+  googleTokenExpiry  DateTime?
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
