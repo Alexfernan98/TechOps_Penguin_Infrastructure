@@ -20,30 +20,30 @@ export default function LoginPage() {
     window.location.href = `${API_URL}/auth/google`;
   };
 
+  // Forzamos colores con inline styles porque el dark mode global de la app
+  // (definido en index.css) overridea los utility classes de Tailwind en esta página.
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1e3a8a 100%)' }}>
       <div className="w-full max-w-md">
 
         {/* Logo */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-            <svg className="w-9 h-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-            </svg>
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-4 shadow-lg p-2" style={{ backgroundColor: '#ffffff' }}>
+            <img src="/logo-penguin.png" alt="Penguin Infrastructure" className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-white">NetHub</h1>
-          <p className="text-slate-400 text-sm mt-1">Penguin Infrastructure S.A.</p>
+          <h1 className="text-2xl font-bold" style={{ color: '#ffffff' }}>NetHub</h1>
+          <p className="text-sm mt-1" style={{ color: '#94a3b8' }}>Penguin Infrastructure S.A.</p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl p-8 shadow-2xl">
-          <h2 className="text-xl font-semibold text-slate-800 mb-1">Iniciar sesión</h2>
-          <p className="text-slate-500 text-sm mb-6">
-            Acceso exclusivo para cuentas <span className="font-medium text-slate-700">@penguin.digital</span>
+        <div className="rounded-2xl p-8 shadow-2xl" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
+          <h2 className="text-xl font-semibold mb-1" style={{ color: '#1e293b' }}>Iniciar sesión</h2>
+          <p className="text-sm mb-6" style={{ color: '#64748b' }}>
+            Acceso exclusivo para cuentas <span className="font-medium" style={{ color: '#334155' }}>@penguin.digital</span>
           </p>
 
           {authError === 'unauthorized' && (
-            <div className="mb-5 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+            <div className="mb-5 p-3 rounded-lg text-sm" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}>
               La cuenta no pertenece al dominio <span className="font-medium">@penguin.digital</span>.
               Iniciá sesión con tu cuenta corporativa.
             </div>
@@ -51,7 +51,8 @@ export default function LoginPage() {
 
           <button
             onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-slate-200 rounded-xl text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 transition-all duration-150 shadow-sm"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-150 shadow-sm hover:shadow"
+            style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#334155' }}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -62,7 +63,7 @@ export default function LoginPage() {
             Continuar con Google
           </button>
 
-          <p className="text-center text-xs text-slate-400 mt-6">
+          <p className="text-center text-xs mt-6" style={{ color: '#94a3b8' }}>
             Solo cuentas corporativas @penguin.digital tienen acceso.
           </p>
         </div>

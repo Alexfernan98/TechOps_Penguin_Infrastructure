@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Search, Upload, Download, ChevronRight, ChevronLeft, AlertTriangle, History, ArrowUpDown, Camera, ScanLine } from 'lucide-react';
+import { Plus, Search, Upload, Download, ChevronRight, ChevronLeft, AlertTriangle, History, ArrowUpDown, Camera, ScanLine, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { assetsApi } from '@/api/assets';
 import { actasApi } from '@/api/actas';
@@ -308,6 +308,7 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
                 {asset.status === 'ASSIGNED'
                   ? <button onClick={() => setModal('return')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Devolver</button>
                   : <button onClick={() => setModal('assign')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Asignar</button>}
+                <button onClick={() => setModal('legacy')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50" title="Registrar un acta que ya fue firmada antes de NetHub (solo se pega el link al PDF en Drive)">Acta legacy</button>
               </>}
             </div>
             <div className="flex gap-2">
@@ -377,11 +378,31 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
         {tab === 'actas' && (
           <div className="space-y-2">
             {(asset.actas || []).length === 0 && <p className="text-slate-400 text-sm">Sin actas vinculadas. Se generan al asignar, devolver o dar de baja.</p>}
-            {(asset.actas || []).map(ac => (
-              <a key={ac.id} href={`${API_BASE}${actasApi.pdfUrl(ac.id)}`} target="_blank" rel="noreferrer" className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm">
-                <span>{ac.type} · {fmtDate(ac.signedAt)}</span><ChevronRight className="w-4 h-4 text-slate-300" />
-              </a>
-            ))}
+            {(asset.actas || []).map(ac => {
+              const ACTA_TYPE_LABEL = { DELIVERY: 'Entrega', RETURN: 'Devolución', RETIREMENT: 'Baja' };
+              const TYPE_COLOR = { DELIVERY: 'bg-blue-50 text-blue-700 border-blue-200', RETURN: 'bg-violet-50 text-violet-700 border-violet-200', RETIREMENT: 'bg-rose-50 text-rose-700 border-rose-200' };
+              const signed = ac.statusActa === 'signed';
+              // Prioridad de link: Drive (legacy o firmada subida) > PDF generado
+              const url = ac.signedDriveUrl || `${API_BASE}${actasApi.pdfUrl(ac.id)}`;
+              return (
+                <a key={ac.id} href={url} target="_blank" rel="noreferrer" className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded border ${TYPE_COLOR[ac.type] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>{ACTA_TYPE_LABEL[ac.type] || ac.type}</span>
+                      {ac.number && <span className="font-mono text-xs text-slate-600">{ac.number}</span>}
+                      {ac.legacy && <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-slate-200 text-slate-600 uppercase tracking-wide">Legacy</span>}
+                      <span className={`text-[11px] font-medium ${signed ? 'text-emerald-600' : 'text-amber-600'}`}>{signed ? 'Firmada' : 'Pendiente'}</span>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {fmtDate(ac.signedAt)}
+                      {ac.receptor && ac.type !== 'RETIREMENT' && <> · {shortName(ac.receptor)}</>}
+                      {ac.tipoBaja && <> · <span className="font-mono">{ac.tipoBaja}</span></>}
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                </a>
+              );
+            })}
           </div>
         )}
       </Drawer>
@@ -391,6 +412,7 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
       {modal === 'return' && <ReturnModal asset={asset} onClose={() => setModal(null)} onDone={(cond) => afterMutation({ type: 'RETURN', assetId: asset.id, receptorId: asset.assignedTo?.id, conditionBefore: asset.condition, conditionAfter: cond })} />}
       {modal === 'status' && <StatusModal asset={asset} onClose={() => setModal(null)} onDone={() => afterMutation()} />}
       {modal === 'retire' && <RetireModal asset={asset} onClose={() => setModal(null)} onDone={(_assetStatus, reason, tipoBaja, userStatement) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja, observations: reason, userStatement, conditionAfter: asset.condition })} />}
+      {modal === 'legacy' && <LegacyActaModal asset={asset} users={users} onClose={() => setModal(null)} onSaved={() => afterMutation()} />}
       {pendingActa && <ActaOfferModal seed={pendingActa} onClose={() => setPendingActa(null)} />}
     </>
   );
@@ -637,6 +659,76 @@ function RetireModal({ asset, onClose, onDone }) {
             <Field label="Declaración del usuario responsable *"><textarea value={userStatement} onChange={e => setUserStatement(e.target.value)} rows={3} className={inputCls} placeholder="Explicación de lo ocurrido según el usuario (será firmada por él/ella en el acta)..." /></Field>
           </>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+function LegacyActaModal({ asset, users, onClose, onSaved }) {
+  // Registra un acta firmada FUERA del sistema (antes del despliegue de NetHub).
+  // Solo guarda el link al PDF original en Drive — no genera nada.
+  const [type, setType] = useState('DELIVERY');
+  const [receptorId, setReceptorId] = useState(asset.assignedTo?.id || '');
+  const [signedAt, setSignedAt] = useState(new Date().toISOString().slice(0, 10));
+  const [signedDriveUrl, setSignedDriveUrl] = useState('');
+  const [observations, setObservations] = useState('');
+  const [tipoBaja, setTipoBaja] = useState('OBSOLETE');
+  const [busy, setBusy] = useState(false);
+
+  const driveOk = /^https?:\/\/(drive|docs)\.google\.com\//i.test(signedDriveUrl);
+  const needsReceptor = type !== 'RETIREMENT';
+  const disabled = busy || !signedAt || !signedDriveUrl || !driveOk || (needsReceptor && !receptorId);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      const body = {
+        type, assetId: asset.id, signedAt, signedDriveUrl, observations,
+        receptorId: needsReceptor ? receptorId : undefined,
+        tipoBaja:   type === 'RETIREMENT' ? tipoBaja : undefined,
+        conditionAfter: asset.condition,
+      };
+      const a = await actasApi.createLegacy(body);
+      toast.success(`Acta legacy ${a.number} registrada`);
+      onSaved(a);
+    } catch (e) { toast.error(e.response?.data?.error || e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Registrar acta firmada (legacy) · ${asset.tag}`} width={620}
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={disabled} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Registrar</button></div>}>
+      <div className="space-y-3">
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          Este formulario es para actas <strong>firmadas antes de NetHub</strong>. No se genera PDF — solo se enlaza al PDF original en Drive. Quedará marcada con el badge <strong>Legacy</strong>.
+        </div>
+        <Field label="Tipo de acta">
+          <select value={type} onChange={e => setType(e.target.value)} className={inputCls}>
+            <option value="DELIVERY">Entrega</option>
+            <option value="RETURN">Devolución</option>
+            <option value="RETIREMENT">Baja</option>
+          </select>
+        </Field>
+        {needsReceptor && (
+          <Field label="Receptor *"><UserPicker users={users} value={receptorId} onChange={setReceptorId} /></Field>
+        )}
+        {type === 'RETIREMENT' && (
+          <Field label="Tipo de baja">
+            <select value={tipoBaja} onChange={e => setTipoBaja(e.target.value)} className={inputCls}>
+              {TIPO_BAJA_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label="Fecha original de la firma *">
+          <input type="date" value={signedAt} onChange={e => setSignedAt(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Link al PDF firmado en Drive *">
+          <input value={signedDriveUrl} onChange={e => setSignedDriveUrl(e.target.value)} placeholder="https://drive.google.com/file/d/.../view" className={`${inputCls} font-mono text-xs`} />
+        </Field>
+        {signedDriveUrl && !driveOk && <p className="text-xs text-rose-600 -mt-2">El link debe apuntar a drive.google.com o docs.google.com.</p>}
+        <Field label="Observaciones (opcional)">
+          <textarea value={observations} onChange={e => setObservations(e.target.value)} rows={2} className={inputCls} placeholder="Notas sobre esta acta histórica..." />
+        </Field>
       </div>
     </Modal>
   );
