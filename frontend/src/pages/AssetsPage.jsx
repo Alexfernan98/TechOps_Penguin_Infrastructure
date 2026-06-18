@@ -40,7 +40,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [warranty, setWarranty] = useState({ assets: [], count: 0 });
 
-  const [f, setF] = useState({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '' });
+  const [f, setF] = useState({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', includeInactive: '' });
   const [sort, setSort] = useState({ by: 'tag', dir: 'asc' });
   const [page, setPage] = useState(1);
 
@@ -106,7 +106,7 @@ export default function AssetsPage() {
   useEffect(() => { setPage(1); }, [f]);
 
   const toggleSort = (by) => setSort(s => ({ by, dir: s.by === by && s.dir === 'asc' ? 'desc' : 'asc' }));
-  const clearFilters = () => setF({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '' });
+  const clearFilters = () => setF({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', includeInactive: '' });
 
   const doExport = () => { window.open(`${API_BASE}${assetsApi.exportUrl(params)}`, '_blank'); };
 
@@ -155,6 +155,10 @@ export default function AssetsPage() {
           <select value={f.dept} onChange={e => setF({ ...f, dept: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Departamento</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select>
           <select value={f.location} onChange={e => setF({ ...f, location: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Ubicación</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select>
           <select value={f.user} onChange={e => setF({ ...f, user: e.target.value })} className="w-full md:w-auto px-3 py-2 border border-slate-200 rounded-lg text-sm"><option value="">Usuario</option>{users.map(u => <option key={u.id} value={u.id}>{shortName(u)}</option>)}</select>
+          <label className="inline-flex items-center gap-2 px-3 py-2 text-sm text-slate-600 cursor-pointer">
+            <input type="checkbox" checked={f.includeInactive === 'true'} onChange={e => setF({ ...f, includeInactive: e.target.checked ? 'true' : '' })} />
+            Mostrar dados de baja
+          </label>
           <button onClick={clearFilters} className="col-span-2 md:col-auto px-3 py-2 text-sm text-slate-500 hover:text-slate-700">Limpiar</button>
         </div>
       </div>
@@ -180,14 +184,20 @@ export default function AssetsPage() {
             {loading && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400">Cargando…</td></tr>}
             {!loading && data.assets.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-400">Sin resultados</td></tr>}
             {!loading && data.assets.map(a => (
-              <tr key={a.id} onClick={() => setSelectedId(a.id)} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer">
+              <tr key={a.id} onClick={() => setSelectedId(a.id)} className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${a.deletedAt ? 'opacity-60 bg-rose-50/30' : ''}`}>
                 <td className="px-4 py-3 text-sm font-mono text-slate-700">{a.tag}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{a.category?.name}</td>
                 <td className="px-4 py-3 text-sm text-slate-700">{a.brand} <span className="text-slate-400">{a.model}</span></td>
                 <td className="px-4 py-3 text-sm font-mono text-slate-500">{a.serialNumber || '—'}</td>
                 <td className="px-4 py-3"><AssetStatusBadge status={a.status} /></td>
                 <td className="px-4 py-3"><ConditionText condition={a.condition} /></td>
-                <td className="px-4 py-3">{a.assignedTo ? <div className="flex items-center gap-2"><Avatar user={a.assignedTo} size={26} /><span className="text-sm text-slate-700">{shortName(a.assignedTo)}</span></div> : <span className="text-slate-400 text-sm">—</span>}</td>
+                <td className="px-4 py-3">{a.assignedTo ? (
+                  <div className="flex items-center gap-2">
+                    <Avatar user={a.assignedTo} size={26} />
+                    <span className="text-sm text-slate-700">{shortName(a.assignedTo)}</span>
+                    {a.shared && <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200" title={`Equipo compartido · ${(a.authorizedUsers || []).length + 1} usuarios`}>👥 +{(a.authorizedUsers || []).length}</span>}
+                  </div>
+                ) : <span className="text-slate-400 text-sm">{a.shared ? <span className="text-blue-600 text-xs">👥 Compartido (sin asignar)</span> : '—'}</span>}</td>
                 <td className="px-4 py-3 text-sm text-slate-600">{a.location?.name || '—'}</td>
                 <td className="px-4 py-3"><WarrantyCell until={a.warrantyUntil} /></td>
                 <td className="px-4 py-3"><ChevronRight className="w-4 h-4 text-slate-300" /></td>
@@ -314,6 +324,8 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
             <div className="flex gap-2">
               {canWrite && asset.status !== 'RETIRED' && asset.status !== 'LOST' &&
                 <button onClick={() => setModal('retire')} className="px-3 py-2 bg-rose-50 text-rose-700 border border-rose-200 text-sm font-medium rounded-lg hover:bg-rose-100">Dar de baja</button>}
+              {canDelete && (asset.deletedAt || asset.status === 'RETIRED' || asset.status === 'LOST') &&
+                <button onClick={() => setModal('restore')} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg" title="Revierte la baja y deja el activo disponible">Restaurar</button>}
               {canDelete &&
                 <button onClick={hardDelete} className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg" title="Borrado definitivo. Solo si no tiene historial.">Eliminar</button>}
             </div>
@@ -335,7 +347,15 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
             <KV label="Marca / Modelo">{`${asset.brand || ''} ${asset.model || ''}`.trim() || '—'}</KV>
             <KV label="Estado">{ASSET_STATUS_LABEL[asset.status]}</KV>
             <KV label="Condición"><ConditionText condition={asset.condition} /></KV>
-            <KV label="Asignado a">{asset.assignedTo ? shortName(asset.assignedTo) : '—'}</KV>
+            <KV label={asset.shared ? 'Responsable administrativo' : 'Asignado a'}>{asset.assignedTo ? shortName(asset.assignedTo) : '—'}</KV>
+            {asset.shared && (
+              <KV label="Usuarios autorizados">
+                {(asset.authorizedUsers || []).length === 0
+                  ? <span className="text-slate-400">—</span>
+                  : <div className="flex flex-wrap gap-1">{(asset.authorizedUsers || []).map(u => <span key={u.id} className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-700 border border-blue-200">{shortName(u)}</span>)}</div>}
+              </KV>
+            )}
+            {asset.shared && <KV label="Modalidad"><span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">👥 Equipo compartido</span></KV>}
             <KV label="Departamento">{depts.find(d => d.slug === asset.departmentSlug)?.name || '—'}</KV>
             <KV label="Ubicación">{asset.location?.name || '—'}</KV>
             <KV label="Fecha de compra">{fmtDate(asset.purchaseDate)}</KV>
@@ -408,11 +428,12 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
       </Drawer>
 
       {modal === 'edit'   && <EditAssetModal asset={asset} locs={locs} depts={depts} onClose={() => setModal(null)} onSaved={() => afterMutation()} />}
-      {modal === 'assign' && <AssignModal asset={asset} users={users} depts={depts} onClose={() => setModal(null)} onDone={(uid) => afterMutation({ type: 'DELIVERY', assetId: asset.id, receptorId: uid, conditionAfter: asset.condition })} />}
-      {modal === 'return' && <ReturnModal asset={asset} onClose={() => setModal(null)} onDone={(cond) => afterMutation({ type: 'RETURN', assetId: asset.id, receptorId: asset.assignedTo?.id, conditionBefore: asset.condition, conditionAfter: cond })} />}
+      {modal === 'assign' && <AssignModal asset={asset} users={users} depts={depts} onClose={() => setModal(null)} onDone={(uid, extra) => afterMutation({ type: 'DELIVERY', assetId: asset.id, receptorId: uid, conditionAfter: asset.condition, authorizedUsers: extra?.authorizedUsers })} />}
+      {modal === 'return' && <ReturnModal asset={asset} onClose={() => setModal(null)} onDone={(cond, returnerId) => afterMutation({ type: 'RETURN', assetId: asset.id, receptorId: returnerId || asset.assignedTo?.id, conditionBefore: asset.condition, conditionAfter: cond })} />}
       {modal === 'status' && <StatusModal asset={asset} onClose={() => setModal(null)} onDone={() => afterMutation()} />}
-      {modal === 'retire' && <RetireModal asset={asset} onClose={() => setModal(null)} onDone={(_assetStatus, reason, tipoBaja, userStatement) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja, observations: reason, userStatement, conditionAfter: asset.condition })} />}
+      {modal === 'retire' && <RetireModal asset={asset} users={users} onClose={() => setModal(null)} onDone={(_assetStatus, reason, tipoBaja, userStatement, responsibleOperator) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja, observations: reason, userStatement, responsibleOperator, conditionAfter: asset.condition })} />}
       {modal === 'legacy' && <LegacyActaModal asset={asset} users={users} onClose={() => setModal(null)} onSaved={() => afterMutation()} />}
+      {modal === 'restore' && <RestoreModal asset={asset} onClose={() => setModal(null)} onDone={() => afterMutation()} />}
       {pendingActa && <ActaOfferModal seed={pendingActa} onClose={() => setPendingActa(null)} />}
     </>
   );
@@ -451,7 +472,7 @@ function BarcodeField({ value, onChange }) {
 }
 
 function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
-  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', imei: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '' };
+  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', imei: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '', shared: false };
   const [form, setForm] = useState(empty);
   const [nextTag, setNextTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -493,13 +514,22 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
         <Field label="Garantía hasta"><input type="date" value={form.warrantyUntil} onChange={e => setForm({ ...form, warrantyUntil: e.target.value })} className={inputCls} /></Field>
         <div className="col-span-2"><Field label="Proveedor"><input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} className={inputCls} /></Field></div>
         <div className="col-span-2"><Field label="Detalles / Specs"><textarea value={form.details} onChange={e => setForm({ ...form, details: e.target.value })} rows={2} className={inputCls} /></Field></div>
+        <div className="col-span-2">
+          <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <input type="checkbox" checked={form.shared} onChange={e => setForm({ ...form, shared: e.target.checked })} className="mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Equipo compartido entre varios usuarios</p>
+              <p className="text-xs text-slate-500">Útil para PCs del NOC, equipos de turno rotativo, etc. Permite asignar múltiples usuarios simultáneamente bajo un responsable principal.</p>
+            </div>
+          </label>
+        </div>
       </div>
     </Modal>
   );
 }
 
 function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
-  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', imei: asset.imei || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '' });
+  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', imei: asset.imei || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '', shared: asset.shared === true });
   const visible = fieldsForCategory(asset.categorySlug || asset.category?.slug);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -530,30 +560,89 @@ function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
         <Field label="Garantía hasta"><input type="date" value={form.warrantyUntil} onChange={e => setForm({ ...form, warrantyUntil: e.target.value })} className={inputCls} /></Field>
         <div className="col-span-2"><Field label="Detalles"><textarea value={form.details} onChange={e => setForm({ ...form, details: e.target.value })} rows={2} className={inputCls} /></Field></div>
         <div className="col-span-2"><Field label="Observaciones"><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={inputCls} /></Field></div>
+        <div className="col-span-2">
+          <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+            <input type="checkbox" checked={form.shared} onChange={e => setForm({ ...form, shared: e.target.checked })} className="mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Equipo compartido entre varios usuarios</p>
+              <p className="text-xs text-slate-500">Permite asignar múltiples usuarios simultáneamente bajo un responsable principal (ej. PC del NOC).</p>
+            </div>
+          </label>
+        </div>
       </div>
     </Modal>
   );
 }
 
 function AssignModal({ asset, users, depts, onClose, onDone }) {
-  const [userId, setUserId] = useState('');
+  const isShared = asset.shared === true;
+  const initialPrimary = asset.assignedTo?.id || '';
+  const initialAuthorized = (asset.authorizedUsers || []).map(u => u.id);
+
+  const [userId, setUserId] = useState(initialPrimary);
+  const [authorizedUserIds, setAuthorizedUserIds] = useState(initialAuthorized);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const target = users.find(u => u.id === userId);
+  const authorizedUsers = authorizedUserIds.map(id => users.find(u => u.id === id)).filter(Boolean);
+
+  const toggleAuthorized = (uid) => {
+    if (uid === userId) return; // el primary no puede estar como secundario
+    setAuthorizedUserIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid]);
+  };
+
   const submit = async () => {
     setBusy(true);
-    try { await assetsApi.assign(asset.id, { userId, notes }); toast.success('Activo asignado'); onDone(userId); }
+    try {
+      const body = isShared
+        ? { userId, notes, isPrimary: true, authorizedUserIds }
+        : { userId, notes };
+      await assetsApi.assign(asset.id, body);
+      toast.success(isShared ? 'Asignación de equipo compartido actualizada' : 'Activo asignado');
+      // El callback espera (uid, extra) — extra incluye authorizedUsers para el acta.
+      const authForActa = isShared
+        ? authorizedUsers.map(u => ({ id: u.id, name: u.name, ci: u.ci || null }))
+        : [];
+      onDone(userId, { authorizedUsers: authForActa });
+    }
     catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
+  const missingCi = isShared ? authorizedUsers.some(u => !u.ci) || (target && !target.ci) : (target && !target.ci);
+
   return (
-    <Modal open onClose={onClose} title={`Asignar ${asset.tag}`}
-      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !userId} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Asignar</button></div>}>
+    <Modal open onClose={onClose} title={`${isShared ? 'Asignar equipo compartido' : 'Asignar'} ${asset.tag}`} width={isShared ? 640 : 480}
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !userId} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">{isShared ? 'Guardar asignaciones' : 'Asignar'}</button></div>}>
       <div className="space-y-3">
-        <Field label="Empleado">
+        {isShared && (
+          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800">
+            <strong>Equipo compartido.</strong> Elegí un responsable administrativo (firma el acta de entrega) y los usuarios autorizados a operar el equipo.
+          </div>
+        )}
+        <Field label={isShared ? 'Responsable principal (firma el acta)' : 'Empleado'}>
           <UserPicker users={users} value={userId} onChange={setUserId} requireCi />
         </Field>
-        {target && !target.ci && <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700">Para emitir el acta de entrega, el empleado debe tener CI cargada en Usuarios.</div>}
+        {target && !target.ci && <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-700">Para emitir el acta, el responsable debe tener CI cargada en Usuarios.</div>}
+
+        {isShared && (
+          <Field label={`Usuarios autorizados (${authorizedUsers.length})`}>
+            <div className="mt-1 max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
+              {users.filter(u => u.isActive !== false).map(u => {
+                const checked = authorizedUserIds.includes(u.id);
+                const isPrimary = u.id === userId;
+                return (
+                  <label key={u.id} className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 ${isPrimary ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <input type="checkbox" disabled={isPrimary} checked={checked} onChange={() => toggleAuthorized(u.id)} />
+                    <span className="flex-1">{u.name}</span>
+                    {isPrimary && <span className="text-[10px] uppercase font-semibold text-blue-600">Responsable</span>}
+                    {!u.ci && <span className="text-[10px] uppercase font-semibold text-amber-600">Sin CI</span>}
+                  </label>
+                );
+              })}
+            </div>
+          </Field>
+        )}
+        {missingCi && isShared && <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">Algunos usuarios autorizados no tienen CI cargada — su nombre aparecerá en el acta sin CI.</div>}
         <Field label="Observaciones"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} /></Field>
       </div>
     </Modal>
@@ -561,20 +650,61 @@ function AssignModal({ asset, users, depts, onClose, onDone }) {
 }
 
 function ReturnModal({ asset, onClose, onDone }) {
+  const isShared = asset.shared === true;
+  // Para shared damos a elegir quién devuelve (puede ser un autorizado, no necesariamente el primary).
+  const tenedores = [
+    ...(asset.assignedTo ? [{ ...asset.assignedTo, role: 'Responsable administrativo' }] : []),
+    ...((asset.authorizedUsers || []).map(u => ({ ...u, role: 'Usuario autorizado' }))),
+  ];
   const [condition, setCondition] = useState(asset.condition || 'GOOD');
   const [notes, setNotes] = useState('');
+  const [returnerId, setReturnerId] = useState(isShared ? '' : (asset.assignedTo?.id || ''));
+  const [returnAll, setReturnAll] = useState(!isShared);
   const [busy, setBusy] = useState(false);
+
   const submit = async () => {
     setBusy(true);
-    try { await assetsApi.unassign(asset.id, { condition, notes }); toast.success('Activo devuelto'); onDone(condition); }
+    try {
+      // En shared: si returnAll, no mandamos userId (devuelve todas). Si no, mandamos el userId del que devuelve.
+      const body = { condition, notes };
+      if (isShared && !returnAll && returnerId) body.userId = returnerId;
+      await assetsApi.unassign(asset.id, body);
+      toast.success('Activo devuelto');
+      // El acta se emite a nombre del que devuelve (returnerId) — o del primary si returnAll.
+      onDone(condition, isShared && !returnAll ? returnerId : asset.assignedTo?.id);
+    }
     catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
+
+  const disabled = busy || (isShared && !returnAll && !returnerId);
+
   return (
     <Modal open onClose={onClose} title={`Devolver ${asset.tag}`}
-      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Confirmar devolución</button></div>}>
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={disabled} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Confirmar devolución</button></div>}>
       <div className="space-y-3">
-        <p className="text-sm text-slate-600">Receptor actual: <strong>{shortName(asset.assignedTo)}</strong></p>
+        {!isShared && <p className="text-sm text-slate-600">Receptor actual: <strong>{shortName(asset.assignedTo)}</strong></p>}
+        {isShared && (
+          <>
+            <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800">
+              <strong>Equipo compartido.</strong> Indicá si devuelve un usuario específico (acta a su nombre) o si se devuelven todas las asignaciones del equipo.
+            </div>
+            <Field label="¿Qué devolución es?">
+              <div className="mt-1 flex gap-2 flex-wrap text-xs">
+                <button type="button" onClick={() => setReturnAll(false)} className={`px-3 py-1.5 rounded-full border ${!returnAll ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>Un usuario específico</button>
+                <button type="button" onClick={() => { setReturnAll(true); setReturnerId(''); }} className={`px-3 py-1.5 rounded-full border ${returnAll ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>Todas las asignaciones</button>
+              </div>
+            </Field>
+            {!returnAll && (
+              <Field label="Persona que devuelve (firma el acta) *">
+                <select value={returnerId} onChange={e => setReturnerId(e.target.value)} className={inputCls}>
+                  <option value="">Seleccionar…</option>
+                  {tenedores.map(u => <option key={u.id} value={u.id}>{u.name} · {u.role}</option>)}
+                </select>
+              </Field>
+            )}
+          </>
+        )}
         <Field label="Condición al devolver"><select value={condition} onChange={e => setCondition(e.target.value)} className={inputCls}>{CONDITIONS.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}</select></Field>
         <Field label="Observaciones (daños, accesorios)"><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputCls} /></Field>
       </div>
@@ -619,26 +749,48 @@ const TIPO_BAJA_OPTIONS = [
   { value: 'OBSOLETE', label: 'Obsoleto / Fin de vida', assetStatus: 'RETIRED' },
 ];
 
-function RetireModal({ asset, onClose, onDone }) {
+function RetireModal({ asset, users = [], onClose, onDone }) {
   const [tipoBaja, setTipoBaja] = useState('OBSOLETE');
   const [reason, setReason] = useState('');
   const [userStatement, setUserStatement] = useState('');
+  const [operatorMode, setOperatorMode] = useState('otro'); // otro | ninguno
+  const [operatorId, setOperatorId] = useState('');
+  const [operatorStatement, setOperatorStatement] = useState('');
   const [busy, setBusy] = useState(false);
 
   const selected = TIPO_BAJA_OPTIONS.find(o => o.value === tipoBaja) || TIPO_BAJA_OPTIONS[0];
   const requiereDeclaracion = ['DAMAGE', 'THEFT', 'LOSS'].includes(tipoBaja);
+  const isShared = asset.shared === true;
+  const requiereOperador = isShared && requiereDeclaracion;
+  // Candidatos: primary + autorizados (los que tenían acceso al equipo).
+  const candidatos = [
+    ...(asset.assignedTo ? [{ ...asset.assignedTo, role: 'Responsable administrativo' }] : []),
+    ...((asset.authorizedUsers || []).map(u => ({ ...u, role: 'Usuario autorizado' }))),
+  ];
+  // Si no hay operador (modo ninguno), no se manda nada. Si modo otro, se permite cualquier user.
+  const operatorEffectiveId = operatorMode === 'ninguno' ? '' : operatorId;
 
   const submit = async () => {
     setBusy(true);
     try {
       await assetsApi.retire(asset.id, { status: selected.assetStatus, reason });
       toast.success('Activo dado de baja');
-      onDone(selected.assetStatus, reason, tipoBaja, requiereDeclaracion ? userStatement : null);
+      onDone(
+        selected.assetStatus, reason, tipoBaja,
+        requiereDeclaracion ? userStatement : null,
+        requiereOperador && operatorEffectiveId ? { userId: operatorEffectiveId, statement: operatorStatement } : null,
+      );
     }
     catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
-  const disabled = busy || !reason || (requiereDeclaracion && !userStatement);
+  // Operador es opcional ahora: si modo=ninguno, no se requiere id/statement.
+  const operatorOk = !requiereOperador
+    || operatorMode === 'ninguno'
+    || (operatorEffectiveId && operatorStatement);
+  const disabled = busy || !reason
+    || (requiereDeclaracion && !userStatement)
+    || !operatorOk;
   return (
     <Modal open onClose={onClose} title={`Dar de baja · ${asset.tag}`}
       footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={disabled} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Confirmar baja</button></div>}>
@@ -654,11 +806,64 @@ function RetireModal({ asset, onClose, onDone }) {
         {requiereDeclaracion && (
           <>
             <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-              Este tipo de baja requiere la <strong>firma del usuario responsable</strong> que tenía asignado el equipo. La declaración aparecerá en el acta junto a las firmas (IT + Usuario).
+              Este tipo de baja requiere la <strong>firma del {isShared ? 'responsable administrativo' : 'usuario responsable'}</strong>. La declaración aparecerá en el acta junto a las firmas {isShared ? '(IT + Responsable administrativo + Operador del incidente)' : '(IT + Usuario)'}.
             </div>
-            <Field label="Declaración del usuario responsable *"><textarea value={userStatement} onChange={e => setUserStatement(e.target.value)} rows={3} className={inputCls} placeholder="Explicación de lo ocurrido según el usuario (será firmada por él/ella en el acta)..." /></Field>
+            <Field label={`Declaración del ${isShared ? 'responsable administrativo' : 'usuario responsable'} *`}><textarea value={userStatement} onChange={e => setUserStatement(e.target.value)} rows={3} className={inputCls} placeholder="Explicación de lo ocurrido (será firmada en el acta)..." /></Field>
           </>
         )}
+        {requiereOperador && (
+          <>
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+              <strong>Equipo compartido.</strong> Identificá al operador específico responsable directo del incidente — su firma aparecerá en el acta como tercer firmante. Si no se pudo identificar, podés dejarlo en blanco.
+            </div>
+            <Field label="¿Quién fue el responsable del incidente?">
+              <div className="mt-1 flex gap-2 flex-wrap text-xs">
+                {[
+                  { v: 'otro',    t: 'Seleccionar persona' },
+                  { v: 'ninguno', t: 'No identificado' },
+                ].map(o => (
+                  <button key={o.v} type="button"
+                    onClick={() => { setOperatorMode(o.v); setOperatorId(''); }}
+                    className={`px-3 py-1.5 rounded-full border ${operatorMode === o.v ? 'bg-rose-600 border-rose-600 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                    {o.t}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            {operatorMode === 'otro' && (
+              <Field label="Persona responsable *">
+                <UserPicker users={users} value={operatorId} onChange={setOperatorId} requireCi />
+              </Field>
+            )}
+            {operatorMode !== 'ninguno' && (
+              <Field label="Declaración del operador *"><textarea value={operatorStatement} onChange={e => setOperatorStatement(e.target.value)} rows={3} className={inputCls} placeholder="Qué pasó exactamente según el operador (será firmada en el acta)..." /></Field>
+            )}
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function RestoreModal({ asset, onClose, onDone }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setBusy(true);
+    try { await assetsApi.restore(asset.id, { reason }); toast.success('Activo restaurado'); onDone(); }
+    catch (e) { toast.error(e.response?.data?.error || e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} title={`Restaurar · ${asset.tag}`}
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !reason.trim()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Restaurar activo</button></div>}>
+      <div className="space-y-3">
+        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">
+          Vas a revertir la baja de <strong>{asset.tag}</strong>. El activo volverá al estado <span className="font-mono">AVAILABLE</span> y aparecerá nuevamente en el listado activo.
+        </div>
+        <Field label="Motivo de la restauración *">
+          <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className={inputCls} placeholder="Ej. La baja fue registrada por error / El equipo fue recuperado tras el robo / Se confirmó que era reparable…" autoFocus />
+        </Field>
       </div>
     </Modal>
   );

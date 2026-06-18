@@ -82,10 +82,15 @@ function actaView(acta) {
     type: acta.type, number: meta.number, signedAt: acta.signedAt,
     receptorName: acta.receptor?.name, receptorCi: acta.receptor?.ci,
     firmanteName: acta.firmante?.name,
+    sameReceptorFirmante: acta.receptorId && acta.firmanteId && acta.receptorId === acta.firmanteId,
     conditionBefore: acta.conditionBefore, conditionAfter: acta.conditionAfter,
     daysInUse: acta.daysInUse, observations: acta.observations,
     itDecision: acta.itDecision, tipoBaja: meta.tipoBaja, asset: acta.asset,
     userStatement: meta.userStatement || null,
+    // Equipo compartido: lista de autorizados (en DELIVERY) y operador
+    // responsable del incidente (en RETIREMENT con DAMAGE/THEFT/LOSS).
+    authorizedUsers:     Array.isArray(meta.authorizedUsers) ? meta.authorizedUsers : [],
+    responsibleOperator: meta.responsibleOperator || null,
   };
 }
 
@@ -296,6 +301,13 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
       if (['DAMAGE', 'THEFT', 'LOSS'].includes(tipo)) {
         if (b.receptorId) {
           receptorId = b.receptorId;
+        } else if (asset.shared) {
+          // Equipo compartido: receptor = primary (responsable administrativo).
+          const primary = await prisma.assetAssignment.findFirst({
+            where: { assetId: b.assetId, returnedAt: null, isPrimary: true },
+            select: { userId: true },
+          });
+          receptorId = primary?.userId || firmanteId;
         } else {
           const lastAssign = await prisma.assetAssignment.findFirst({
             where: { assetId: b.assetId },
@@ -303,6 +315,20 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
             select: { userId: true },
           });
           receptorId = lastAssign?.userId || firmanteId;
+        }
+        // Para shared, si el body trae responsibleOperator.userId resolvemos su
+        // nombre/CI server-side y lo persistimos en metadata para el template.
+        if (asset.shared && b.responsibleOperator?.userId) {
+          const op = await prisma.user.findUnique({
+            where: { id: b.responsibleOperator.userId },
+            select: { name: true, ci: true },
+          });
+          if (op) {
+            b.responsibleOperator = {
+              name: op.name, ci: op.ci || null,
+              statement: b.responsibleOperator.statement || null,
+            };
+          }
         }
       } else {
         receptorId = firmanteId;
@@ -363,6 +389,10 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
           metadata: {
             number, displayName, status: 'pending_sign', tipoBaja,
             userStatement: b.userStatement || null,
+            // Equipo compartido (RF-INV-SHARED). Se persisten en metadata para
+            // que sobrevivan a cambios futuros del modelo de Asset/Assignment.
+            authorizedUsers:     Array.isArray(b.authorizedUsers) ? b.authorizedUsers : undefined,
+            responsibleOperator: b.responsibleOperator || undefined,
           },
         },
         include: ACTA_INCLUDE,

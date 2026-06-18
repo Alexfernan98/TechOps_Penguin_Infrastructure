@@ -177,6 +177,7 @@ model Asset {
   warrantyUntil     DateTime?
   accessories       String?        @db.Text
   evidenceFolderUrl String?
+  shared            Boolean        @default(false)
   lastRevisionDate  DateTime?
   notes             String?        @db.Text
   createdAt         DateTime       @default(now())
@@ -203,6 +204,7 @@ model AssetAssignment {
   assignedById String
   assignedAt   DateTime  @default(now())
   returnedAt   DateTime?
+  isPrimary    Boolean   @default(true)
   notes        String?   @db.Text
 
   asset      Asset @relation(fields: [assetId], references: [id])
