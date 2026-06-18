@@ -155,6 +155,12 @@ async function uploadToFolder(userId, folderId, { name, mimeType, stream, year, 
   // IT_ADMIN puedan abrirlo. Sin esto, drive.file crea archivos privados al
   // creador (no hereda permisos de la carpeta padre fuera de Shared Drives).
   // role=writer porque varios IT_ADMIN podrían subir/sobre-escribir.
+  // Compartir 2 niveles:
+  //   1. Dominio penguin.digital con role=writer (para que otros IT_ADMIN
+  //      puedan sobreescribir). Puede fallar si Workspace restringe sharing.
+  //   2. anyoneWithLink con role=reader (fallback siempre disponible — el ID
+  //      del archivo es opaco y solo se distribuye dentro de NetHub).
+  // Sin esto, drive.file crea archivos privados al creador.
   try {
     const domain = (userEmail || '').split('@')[1];
     if (domain) {
@@ -166,6 +172,15 @@ async function uploadToFolder(userId, folderId, { name, mimeType, stream, year, 
     }
   } catch (e) {
     console.warn('drive: no se pudo compartir con el dominio:', e.message);
+  }
+  try {
+    await drive.permissions.create({
+      fileId: res.data.id,
+      sendNotificationEmail: false,
+      requestBody: { type: 'anyone', role: 'reader' },
+    });
+  } catch (e) {
+    console.warn('drive: no se pudo compartir como anyoneWithLink:', e.message);
   }
 
   let webViewLink = res.data.webViewLink || null;

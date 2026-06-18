@@ -18,6 +18,16 @@ function resolveActaUrl(path) {
   if (path.startsWith('/uploads/')) return `${ORIGIN}${path}`;
   return `${API_BASE}${path}`;
 }
+
+// Transforma una URL de Drive (`/view?...`) al endpoint `/preview` que sí
+// se puede embeber en iframes. El usuario debe tener acceso al archivo
+// (en NetHub todos los IT_ADMIN tienen edit en las carpetas raíz de Drive).
+function toDrivePreviewUrl(url) {
+  if (!url) return url;
+  const m = url.match(/^(https?:\/\/(?:drive|docs)\.google\.com\/file\/d\/[^/]+)\/(?:view|preview|edit)/i);
+  if (!m) return url;
+  return `${m[1]}/preview`;
+}
 import Drawer from '@/components/ui/Drawer';
 import Modal from '@/components/ui/Modal';
 import { shortName } from '@/components/ui/Avatar';
@@ -253,9 +263,14 @@ function ActaDrawer({ id, onClose, onRefresh }) {
           <div><p className="text-xs text-slate-400">Firmante</p><p className="text-slate-700">{shortName(acta.firmante)}</p></div>
         </div>
         <div className="border border-slate-200 rounded-lg overflow-hidden" style={{ height: 520 }}>
-          <iframe title="preview" src={signed ? src : resolveActaUrl(actasApi.previewUrl(id))} className="w-full h-full" />
+          <iframe
+            title="preview"
+            src={signed ? toDrivePreviewUrl(src) : resolveActaUrl(actasApi.previewUrl(id))}
+            className="w-full h-full"
+            allow="autoplay"
+          />
         </div>
-        <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><FileText className="w-3 h-3" /> Vista previa del documento {signed ? 'firmado' : 'generado'}.</p>
+        <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><FileText className="w-3 h-3" /> Vista previa del documento {signed ? 'firmado' : 'generado'}{acta.legacy ? ' · legacy' : ''}.</p>
       </Drawer>
 
       {showUpload && <UploadSignedModal id={id} onClose={() => setShowUpload(false)} onDone={() => { setShowUpload(false); load(); onRefresh(); }} />}
