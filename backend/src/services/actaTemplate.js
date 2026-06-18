@@ -113,7 +113,11 @@ function deliveryClauses(asset) {
   return keys.map(k => COMMON_CLAUSES[k](n));
 }
 
-function signatures(acta, { single = false, receptorRole = 'Receptor' } = {}) {
+function signatures(acta, { single = false, receptorRole = 'Receptor', extraSigner = null } = {}) {
+  // Si receptor y firmante son la misma persona (típico cuando el responsable
+  // administrativo del equipo es el propio líder IT), omitimos la firma del
+  // receptor — sino el mismo nombre aparece duplicado en el acta.
+  const collapse = single || acta.sameReceptorFirmante === true;
   const receptor = `<div class="sign">
       <div class="line"></div>
       <p class="name">${esc(acta.receptorName)}</p>
@@ -124,7 +128,26 @@ function signatures(acta, { single = false, receptorRole = 'Receptor' } = {}) {
       <p class="name">${esc(acta.firmanteName)}</p>
       <p class="role">Networking &amp; Cybersecurity Leader · Penguin Infrastructure S.A.</p>
     </div>`;
-  return `<div class="signs">${single ? firmante : receptor + firmante}</div>`;
+  const third = extraSigner ? `<div class="sign">
+      <div class="line"></div>
+      <p class="name">${esc(extraSigner.name)}</p>
+      <p class="role">${esc(extraSigner.role || 'Operador responsable')}${extraSigner.ci ? ` · C.I. ${esc(extraSigner.ci)}` : ''}</p>
+    </div>` : '';
+  return `<div class="signs">${collapse ? firmante + third : receptor + firmante + third}</div>`;
+}
+
+// Renderiza la lista de usuarios autorizados de un activo compartido. Se usa en
+// el cuerpo del acta de entrega para dejar constancia explícita de quiénes más
+// pueden operar el equipo bajo la responsabilidad administrativa del receptor.
+function authorizedUsersBlock(acta) {
+  const users = acta.authorizedUsers || [];
+  if (!users.length) return '';
+  return `<h3>Usuarios autorizados a operar el equipo</h3>
+    <p class="declare">El presente activo se entrega bajo la modalidad de <strong>equipo compartido</strong>. El receptor arriba indicado es el responsable administrativo del equipo. Quedan autorizados a operarlo, dentro del marco de sus funciones, los siguientes usuarios:</p>
+    <table class="tech">
+      <tr><th style="width:60%">Nombre</th><th>C.I.</th></tr>
+      ${users.map(u => `<tr><td>${esc(u.name)}</td><td>${esc(u.ci || '—')}</td></tr>`).join('')}
+    </table>`;
 }
 
 // Bajas con responsabilidad del usuario: el dueño anterior debe firmar y
@@ -149,6 +172,7 @@ function body(acta) {
       ${techTable(acta.asset)}
       <h3>Cláusulas de responsabilidad</h3>
       <ol class="clauses">${deliveryClauses(acta.asset).map(c => `<li>${esc(c)}</li>`).join('')}</ol>
+      ${authorizedUsersBlock(acta)}
       ${signatures(acta)}`;
   }
 
@@ -174,10 +198,15 @@ function body(acta) {
 
   // RETIREMENT
   const requiereFirmaUser = TIPO_BAJA_REQUIERE_FIRMA_USUARIO.has(acta.tipoBaja);
-  const userBlock = requiereFirmaUser && acta.receptorName ? `
-    <h3>Declaración del usuario responsable</h3>
-    <p class="declare">Yo, <strong>${esc(acta.receptorName)}</strong>${acta.receptorCi ? ` con Cédula de Identidad <strong>${esc(acta.receptorCi)}</strong>` : ''}, en mi calidad de empleado de Penguin Group S.A. y último responsable del equipo arriba descripto, declaro lo siguiente respecto al hecho que motiva la presente baja:</p>
+  const op = acta.responsibleOperator || null; // sólo viene en bajas de activos compartidos
+  const userBlock = requiereFirmaUser && acta.receptorName && !acta.sameReceptorFirmante ? `
+    <h3>Declaración del responsable administrativo</h3>
+    <p class="declare">Yo, <strong>${esc(acta.receptorName)}</strong>${acta.receptorCi ? ` con Cédula de Identidad <strong>${esc(acta.receptorCi)}</strong>` : ''}, en mi calidad de empleado de Penguin Group S.A. y responsable administrativo del equipo arriba descripto, declaro lo siguiente respecto al hecho que motiva la presente baja:</p>
     <p class="box">${esc(acta.userStatement || acta.observations)}</p>` : '';
+  const operatorBlock = requiereFirmaUser && op ? `
+    <h3>Declaración del operador responsable del incidente</h3>
+    <p class="declare">Yo, <strong>${esc(op.name)}</strong>${op.ci ? ` con Cédula de Identidad <strong>${esc(op.ci)}</strong>` : ''}, en mi calidad de operador autorizado a utilizar el equipo compartido descripto, reconozco haber sido el responsable directo del hecho que motiva la presente baja y declaro lo siguiente:</p>
+    <p class="box">${esc(op.statement || '—')}</p>` : '';
   return `
     <p class="declare">El departamento de <strong>Networking &amp; Cybersecurity</strong> de Penguin
     Infrastructure S.A., en fecha <strong>${fmtDate(acta.signedAt)}</strong>, resuelve dar de baja ${n.art}
@@ -187,11 +216,17 @@ function body(acta) {
     <table class="tech">
       <tr><th>Tipo de baja</th><td>${esc(TIPO_BAJA_LABEL[acta.tipoBaja] || acta.tipoBaja || '—')}</td></tr>
       <tr><th>Condición final</th><td>${esc(COND_LABEL[acta.conditionAfter] || acta.conditionAfter)}</td></tr>
+      ${acta.asset?.shared ? `<tr><th>Modalidad</th><td>Equipo compartido</td></tr>` : ''}
     </table>
     <h3>Motivo de la baja (departamento IT)</h3>
     <p class="box">${esc(acta.observations)}</p>
     ${userBlock}
-    ${signatures(acta, { single: !requiereFirmaUser, receptorRole: 'Usuario responsable' })}`;
+    ${operatorBlock}
+    ${signatures(acta, {
+      single: !requiereFirmaUser,
+      receptorRole: acta.asset?.shared ? 'Responsable administrativo' : 'Usuario responsable',
+      extraSigner: op ? { name: op.name, ci: op.ci, role: 'Operador responsable del incidente' } : null,
+    })}`;
 }
 
 function renderActaHtml(acta) {
@@ -199,31 +234,31 @@ function renderActaHtml(acta) {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
   <title>${esc(acta.number || title)}</title>
   <style>
-    @page { size: A4; margin: 18mm; }
+    @page { size: A4; margin: 14mm 16mm 16mm 16mm; }
     * { box-sizing: border-box; }
-    body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1e293b; font-size: 12px; line-height: 1.5; margin: 0; }
-    .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid ${PENGUIN_BLUE}; padding-bottom: 12px; margin-bottom: 18px; }
-    .brand { display: flex; align-items: center; gap: 12px; }
-    .brand img { height: 36px; width: auto; display: block; }
-    .brand .text { font-size: 11px; font-weight: 500; color: #64748b; line-height: 1.3; }
-    .brand .text strong { display: block; font-size: 14px; color: ${PENGUIN_BLUE}; font-weight: 700; }
-    .docnum { text-align: right; font-size: 11px; color: #64748b; }
-    .docnum strong { display:block; font-size: 13px; color: ${PENGUIN_BLUE}; }
-    h1 { font-size: 16px; text-align: center; color: ${PENGUIN_BLUE}; letter-spacing: .5px; margin: 0 0 16px; }
-    h3 { font-size: 12px; color: ${PENGUIN_BLUE}; margin: 18px 0 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; }
-    .declare { text-align: justify; margin: 0 0 12px; }
-    table.tech { width: 100%; border-collapse: collapse; margin: 6px 0; }
-    table.tech th, table.tech td { border: 1px solid ${PENGUIN_BLUE}; padding: 5px 8px; text-align: left; vertical-align: top; }
-    table.tech th { background: #eff6ff; width: 38%; font-weight: 600; color: ${PENGUIN_BLUE}; }
-    ol.clauses { padding-left: 18px; margin: 4px 0; }
-    ol.clauses li { text-align: justify; margin-bottom: 5px; }
-    .box { border: 1px solid #cbd5e1; border-radius: 4px; min-height: 40px; padding: 8px; background: #f8fafc; }
-    .signs { display: flex; justify-content: space-around; margin-top: 48px; gap: 32px; }
-    .sign { text-align: center; flex: 1; }
-    .sign .line { border-top: 1px solid #334155; margin: 0 auto 6px; width: 80%; }
-    .sign .name { font-weight: 600; margin: 0; }
-    .sign .role { font-size: 10px; color: #64748b; margin: 2px 0 0; }
-    .foot { position: fixed; bottom: 6mm; left: 0; right: 0; text-align: center; font-size: 9px; color: #94a3b8; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1e293b; font-size: 10.5px; line-height: 1.38; margin: 0; }
+    .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid ${PENGUIN_BLUE}; padding-bottom: 8px; margin-bottom: 12px; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand img { height: 30px; width: auto; display: block; }
+    .brand .text { font-size: 10px; font-weight: 500; color: #64748b; line-height: 1.3; }
+    .brand .text strong { display: block; font-size: 12px; color: ${PENGUIN_BLUE}; font-weight: 700; }
+    .docnum { text-align: right; font-size: 10px; color: #64748b; }
+    .docnum strong { display:block; font-size: 12px; color: ${PENGUIN_BLUE}; }
+    h1 { font-size: 14px; text-align: center; color: ${PENGUIN_BLUE}; letter-spacing: .5px; margin: 0 0 10px; }
+    h3 { font-size: 11px; color: ${PENGUIN_BLUE}; margin: 10px 0 4px; border-bottom: 1px solid #e2e8f0; padding-bottom: 2px; }
+    .declare { text-align: justify; margin: 0 0 8px; }
+    table.tech { width: 100%; border-collapse: collapse; margin: 4px 0; }
+    table.tech th, table.tech td { border: 1px solid ${PENGUIN_BLUE}; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10.5px; }
+    table.tech th { background: #eff6ff; width: 32%; font-weight: 600; color: ${PENGUIN_BLUE}; }
+    ol.clauses { padding-left: 16px; margin: 4px 0; }
+    ol.clauses li { text-align: justify; margin-bottom: 3px; }
+    .box { border: 1px solid #cbd5e1; border-radius: 4px; min-height: 28px; padding: 6px 8px; background: #f8fafc; }
+    .signs { display: flex; justify-content: space-around; margin-top: 56px; gap: 18px; page-break-inside: avoid; break-inside: avoid; }
+    .sign { text-align: center; flex: 1; page-break-inside: avoid; break-inside: avoid; }
+    .sign .line { border-top: 1px solid #334155; margin: 0 auto 4px; width: 82%; }
+    .sign .name { font-weight: 600; margin: 0; font-size: 10.5px; }
+    .sign .role { font-size: 9px; color: #64748b; margin: 1px 0 0; line-height: 1.25; }
+    .foot { position: fixed; bottom: 5mm; left: 0; right: 0; text-align: center; font-size: 8.5px; color: #94a3b8; }
   </style></head><body>
     <div class="head">
       <div class="brand">

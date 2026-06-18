@@ -9,6 +9,7 @@ export const assetsApi = {
   assign:    (id, body)    => api.post(`/assets/${id}/assign`, body).then(r => r.data.asset),
   unassign:  (id, body)    => api.post(`/assets/${id}/unassign`, body).then(r => r.data.asset),
   retire:    (id, body)    => api.patch(`/assets/${id}/retire`, body).then(r => r.data.asset),
+  restore:   (id, body)    => api.patch(`/assets/${id}/restore`, body).then(r => r.data.asset),
   nextTag:   (category)    => api.get('/assets/next-tag', { params: { category } }).then(r => r.data.nextTag),
   warrantyAlerts: ()       => api.get('/assets/warranty-alerts').then(r => r.data),
   import:    (rows)        => api.post('/assets/import', { rows }).then(r => r.data),

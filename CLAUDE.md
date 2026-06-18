@@ -172,6 +172,26 @@ actual" del [README.md](README.md) con:
 
 No dejar el README desfasado — debe reflejar lo que está realmente desplegado.
 
+### Versionado (SemVer)
+
+La versión se muestra en el sidebar y se lee de `frontend/package.json` →
+`version`. `backend/package.json` debe llevar la **misma versión** para
+mantenerlas en sync.
+
+**Cuándo bumpear** (antes de mergear a `main`):
+- `PATCH` (0.7.**1**) — bugfix sin features nuevas visibles al usuario.
+- `MINOR` (0.**8**.0) — feature visible (ej. equipos compartidos, módulo nuevo).
+- `MAJOR` (**1**.0.0) — sólo cuando el sistema está estable en producción
+  para todos los empleados (deploy en VM + backups + alta real de activos).
+
+**Cómo bumpear**:
+1. Editar `frontend/package.json` y `backend/package.json` → `version`.
+2. Mencionar el bump en el cuerpo del PR a main.
+3. Tras el merge: `git tag v0.X.Y && git push --tags`.
+4. Actualizar la tabla del README con el tag.
+
+No bumpear en cada merge a `develop`. Sólo en merges a `main`.
+
 ## 7. Economía de contexto y tokens
 
 Cosas que queman contexto y debés evitar:
