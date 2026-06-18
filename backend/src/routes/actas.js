@@ -72,6 +72,7 @@ function flatten(acta) {
     tipoBaja:        meta.tipoBaja || null,
     userStatement:   meta.userStatement || null,
     signedDriveUrl:  meta.signedDriveUrl || null,
+    legacy:          meta.legacy === true,
   };
 }
 
@@ -207,6 +208,62 @@ router.get('/:id/pdf', authenticate, async (req, res, next) => {
     } finally {
       await browser.close();
     }
+  } catch (err) { next(err); }
+});
+
+// ── POST /actas/legacy ─────────────────────────────────────────────────────────
+// Registra un acta firmada FUERA de NetHub (antes del despliegue del sistema).
+// No genera PDF — solo persiste el link al PDF original en Drive y los metadatos.
+// Marca metadata.legacy=true para que la UI muestre un badge "Legacy".
+router.post('/legacy', authenticate, requireRole('IT_TECH'), async (req, res, next) => {
+  try {
+    const b = req.body;
+    if (!ACTA_TYPES.includes(b.type)) return res.status(400).json({ error: 'type inválido' });
+    if (!b.assetId)     return res.status(400).json({ error: 'assetId es requerido' });
+    if (!b.receptorId && b.type !== 'RETIREMENT') return res.status(400).json({ error: 'receptorId es requerido' });
+    if (!b.signedDriveUrl) return res.status(400).json({ error: 'signedDriveUrl es requerido (link al PDF firmado en Drive)' });
+    if (!b.signedAt)    return res.status(400).json({ error: 'signedAt es requerido (fecha original de la firma)' });
+
+    const asset = await prisma.asset.findUnique({ where: { id: b.assetId } });
+    if (!asset) return res.status(404).json({ error: 'Activo no encontrado' });
+
+    const firmanteId = b.firmanteId || req.user.id;
+    const receptorId = b.type === 'RETIREMENT' ? (b.receptorId || firmanteId) : b.receptorId;
+    const signedAt   = new Date(b.signedAt);
+    if (isNaN(signedAt)) return res.status(400).json({ error: 'signedAt inválido' });
+
+    const tipoBaja = b.type === 'RETIREMENT' ? (b.tipoBaja || 'OBSOLETE').toUpperCase() : null;
+    if (tipoBaja && !TIPO_BAJA.includes(tipoBaja)) {
+      return res.status(400).json({ error: `tipoBaja debe ser uno de: ${TIPO_BAJA.join(', ')}` });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      // Usa el año de la firma original (no el actual) para el correlativo.
+      const number = await nextActaNumber(tx, b.type, signedAt.getFullYear(), asset);
+      const receptor = await tx.user.findUnique({ where: { id: receptorId }, select: { name: true } });
+      const displayName = buildDisplayName({ type: b.type, asset, receptor, tipoBaja, date: signedAt });
+
+      return tx.acta.create({
+        data: {
+          type: b.type, assetId: b.assetId, receptorId, firmanteId,
+          signedAt,
+          conditionBefore: b.conditionBefore || null,
+          conditionAfter: b.conditionAfter || asset.condition,
+          observations: b.observations || null,
+          metadata: {
+            number, displayName,
+            status: 'signed',             // YA está firmado — no requiere upload posterior
+            tipoBaja,
+            legacy: true,                 // ← badge en la UI
+            signedDriveUrl: b.signedDriveUrl,
+          },
+        },
+        include: ACTA_INCLUDE,
+      });
+    });
+
+    await audit({ req, action: 'CREATE', entityType: 'Acta', entityId: created.id, after: { ...created, legacy: true } });
+    res.status(201).json({ acta: flatten(created) });
   } catch (err) { next(err); }
 });
 
