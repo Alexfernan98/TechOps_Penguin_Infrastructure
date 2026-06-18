@@ -148,10 +148,8 @@ export default function Sidebar({ open = false, onClose = () => {} }) {
       >
         <div className="h-16 px-6 border-b border-slate-700/50 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
-              </svg>
+            <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center flex-shrink-0 p-1">
+              <img src="/logo-penguin.png" alt="Penguin" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <p className="text-white font-semibold text-sm leading-tight truncate">NetHub</p>
