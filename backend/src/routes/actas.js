@@ -237,6 +237,13 @@ router.post('/legacy', authenticate, requireRole('IT_TECH'), async (req, res, ne
       return res.status(400).json({ error: `tipoBaja debe ser uno de: ${TIPO_BAJA.join(', ')}` });
     }
 
+    // Forzar que el link a Drive abra con la cuenta empresarial, no con la
+    // cuenta personal primaria del browser. Si el user ya pegó authuser, respetamos.
+    let signedDriveUrl = b.signedDriveUrl;
+    if (req.user.email && !/[?&]authuser=/.test(signedDriveUrl)) {
+      signedDriveUrl += (signedDriveUrl.includes('?') ? '&' : '?') + 'authuser=' + encodeURIComponent(req.user.email);
+    }
+
     const created = await prisma.$transaction(async (tx) => {
       // Usa el año de la firma original (no el actual) para el correlativo.
       const number = await nextActaNumber(tx, b.type, signedAt.getFullYear(), asset);
@@ -255,7 +262,7 @@ router.post('/legacy', authenticate, requireRole('IT_TECH'), async (req, res, ne
             status: 'signed',             // YA está firmado — no requiere upload posterior
             tipoBaja,
             legacy: true,                 // ← badge en la UI
-            signedDriveUrl: b.signedDriveUrl,
+            signedDriveUrl,
           },
         },
         include: ACTA_INCLUDE,
