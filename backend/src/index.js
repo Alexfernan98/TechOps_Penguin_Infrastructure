@@ -51,7 +51,7 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'TechOpsHub API',
+    service: 'NetHub API',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
   });
@@ -80,13 +80,14 @@ app.use('/api/tickets',           require('./routes/tickets'));
 app.use('/api/notifications',     require('./routes/notifications'));
 app.use('/api/audit',             require('./routes/audit'));
 app.use('/api/dashboard',         require('./routes/dashboard'));
+app.use('/api/drive',             require('./routes/drive'));
 
 // Archivos subidos (PDFs de actas firmadas) — servidos estáticamente
 app.use('/uploads', express.static(require('path').join(__dirname, '../uploads')));
 
 app.get('/api', (_req, res) => {
   res.json({
-    message: 'TechOpsHub API v0.1.0',
+    message: 'NetHub API v0.1.0',
     docs: 'Próximamente',
   });
 });
@@ -112,7 +113,7 @@ app.use((err, _req, res, _next) => {
 // Arrancar servidor
 // ─────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 TechOpsHub API corriendo en http://localhost:${PORT}`);
+  console.log(`\n🚀 NetHub API corriendo en http://localhost:${PORT}`);
   console.log(`📋 Entorno: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🏥 Health check: http://localhost:${PORT}/health\n`);
   require('./services/cron').startCron();

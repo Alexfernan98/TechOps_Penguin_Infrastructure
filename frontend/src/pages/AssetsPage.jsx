@@ -14,6 +14,7 @@ import BarcodeScanner from '@/components/ui/BarcodeScanner';
 import UserPicker from '@/components/ui/UserPicker';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import useAuthStore from '@/store/authStore';
+import { fieldsForCategory, showsField } from '@/lib/categoryFields';
 
 const STATUSES   = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
 const CONDITIONS = ['GOOD', 'FAIR', 'POOR', 'DAMAGED'];
@@ -342,19 +343,22 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
             <KV label="Última revisión">{fmtDate(asset.lastRevisionDate)}</KV>
           </dl>
         )}
-        {tab === 'specs' && (
+        {tab === 'specs' && (() => {
+          const vis = fieldsForCategory(asset.category?.slug || asset.categorySlug);
+          return (
           <dl>
-            <KV label="Número de serie"><span className="font-mono">{asset.serialNumber || '—'}</span></KV>
-            <KV label="IMEI"><span className="font-mono">{asset.imei || '—'}</span></KV>
-            <KV label="MAC WiFi"><span className="font-mono">{asset.macWifi || '—'}</span></KV>
-            <KV label="MAC Ethernet"><span className="font-mono">{asset.macEth || '—'}</span></KV>
-            <KV label="Sistema operativo">{asset.operatingSystem || '—'}</KV>
+            {vis.includes('serialNumber')    && <KV label="Número de serie"><span className="font-mono">{asset.serialNumber || '—'}</span></KV>}
+            {vis.includes('imei')            && <KV label="IMEI"><span className="font-mono">{asset.imei || '—'}</span></KV>}
+            {vis.includes('macWifi')         && <KV label="MAC WiFi"><span className="font-mono">{asset.macWifi || '—'}</span></KV>}
+            {vis.includes('macEth')          && <KV label="MAC Ethernet"><span className="font-mono">{asset.macEth || '—'}</span></KV>}
+            {vis.includes('operatingSystem') && <KV label="Sistema operativo">{asset.operatingSystem || '—'}</KV>}
             <KV label="Accesorios">{asset.accessories || '—'}</KV>
             <KV label="Evidencia">{asset.evidenceFolderUrl ? <a href={asset.evidenceFolderUrl} target="_blank" rel="noreferrer" className="text-blue-600">Abrir</a> : '—'}</KV>
             <div className="pt-3"><p className="text-sm text-slate-500 mb-1">Detalles</p><p className="text-sm text-slate-700 whitespace-pre-wrap">{asset.details || '—'}</p></div>
             <div className="pt-3"><p className="text-sm text-slate-500 mb-1">Observaciones</p><p className="text-sm text-slate-700 whitespace-pre-wrap">{asset.notes || '—'}</p></div>
           </dl>
-        )}
+          );
+        })()}
         {tab === 'history' && (
           <div className="space-y-3">
             {history.length === 0 && <p className="text-slate-400 text-sm">Sin eventos registrados.</p>}
@@ -386,7 +390,7 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
       {modal === 'assign' && <AssignModal asset={asset} users={users} depts={depts} onClose={() => setModal(null)} onDone={(uid) => afterMutation({ type: 'DELIVERY', assetId: asset.id, receptorId: uid, conditionAfter: asset.condition })} />}
       {modal === 'return' && <ReturnModal asset={asset} onClose={() => setModal(null)} onDone={(cond) => afterMutation({ type: 'RETURN', assetId: asset.id, receptorId: asset.assignedTo?.id, conditionBefore: asset.condition, conditionAfter: cond })} />}
       {modal === 'status' && <StatusModal asset={asset} onClose={() => setModal(null)} onDone={() => afterMutation()} />}
-      {modal === 'retire' && <RetireModal asset={asset} onClose={() => setModal(null)} onDone={(_assetStatus, reason, tipoBaja) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja, observations: reason, conditionAfter: asset.condition })} />}
+      {modal === 'retire' && <RetireModal asset={asset} onClose={() => setModal(null)} onDone={(_assetStatus, reason, tipoBaja, userStatement) => afterMutation({ type: 'RETIREMENT', assetId: asset.id, tipoBaja, observations: reason, userStatement, conditionAfter: asset.condition })} />}
       {pendingActa && <ActaOfferModal seed={pendingActa} onClose={() => setPendingActa(null)} />}
     </>
   );
@@ -425,10 +429,11 @@ function BarcodeField({ value, onChange }) {
 }
 
 function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
-  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '' };
+  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', imei: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '' };
   const [form, setForm] = useState(empty);
   const [nextTag, setNextTag] = useState('');
   const [busy, setBusy] = useState(false);
+  const visible = fieldsForCategory(form.categorySlug);
 
   useEffect(() => { if (open) { setForm(empty); setNextTag(''); } }, [open]);
   useEffect(() => { if (form.categorySlug) assetsApi.nextTag(form.categorySlug).then(setNextTag).catch(() => setNextTag('')); }, [form.categorySlug]);
@@ -451,12 +456,13 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
             <BarcodeField value={form.barcode} onChange={(v) => setForm({ ...form, barcode: v })} />
           </Field>
         </div>
-        <Field label="Marca"><input value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className={inputCls} /></Field>
-        <Field label="Modelo"><input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls} /></Field>
-        <Field label="Número de serie"><input value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} className={`${inputCls} font-mono`} /></Field>
-        <Field label="Sistema operativo"><input value={form.operatingSystem} onChange={e => setForm({ ...form, operatingSystem: e.target.value })} className={inputCls} /></Field>
-        <Field label="MAC WiFi"><input value={form.macWifi} onChange={e => setForm({ ...form, macWifi: e.target.value })} placeholder="AA:BB:CC:DD:EE:FF" className={`${inputCls} font-mono`} /></Field>
-        <Field label="MAC Ethernet"><input value={form.macEth} onChange={e => setForm({ ...form, macEth: e.target.value })} placeholder="AA:BB:CC:DD:EE:FF" className={`${inputCls} font-mono`} /></Field>
+        {visible.includes('brand')           && <Field label="Marca"><input value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className={inputCls} /></Field>}
+        {visible.includes('model')           && <Field label="Modelo"><input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls} /></Field>}
+        {visible.includes('serialNumber')    && <Field label="Número de serie"><input value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
+        {visible.includes('imei')            && <Field label="IMEI"><input value={form.imei} onChange={e => setForm({ ...form, imei: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
+        {visible.includes('operatingSystem') && <Field label="Sistema operativo"><input value={form.operatingSystem} onChange={e => setForm({ ...form, operatingSystem: e.target.value })} className={inputCls} /></Field>}
+        {visible.includes('macWifi')         && <Field label="MAC WiFi"><input value={form.macWifi} onChange={e => setForm({ ...form, macWifi: e.target.value })} placeholder="AA:BB:CC:DD:EE:FF" className={`${inputCls} font-mono`} /></Field>}
+        {visible.includes('macEth')          && <Field label="MAC Ethernet"><input value={form.macEth} onChange={e => setForm({ ...form, macEth: e.target.value })} placeholder="AA:BB:CC:DD:EE:FF" className={`${inputCls} font-mono`} /></Field>}
         <Field label="Estado inicial"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className={inputCls}>{['AVAILABLE', 'REPAIR', 'DAMAGED', 'LOAN'].map(s => <option key={s} value={s}>{ASSET_STATUS_LABEL[s]}</option>)}</select></Field>
         <Field label="Condición"><select value={form.condition} onChange={e => setForm({ ...form, condition: e.target.value })} className={inputCls}>{CONDITIONS.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}</select></Field>
         <Field label="Ubicación"><select value={form.locationSlug} onChange={e => setForm({ ...form, locationSlug: e.target.value })} className={inputCls}><option value="">—</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select></Field>
@@ -471,7 +477,8 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
 }
 
 function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
-  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '' });
+  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', imei: asset.imei || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '' });
+  const visible = fieldsForCategory(asset.categorySlug || asset.category?.slug);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     setBusy(true);
@@ -488,12 +495,13 @@ function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
             <BarcodeField value={form.barcode} onChange={(v) => setForm({ ...form, barcode: v })} />
           </Field>
         </div>
-        <Field label="Marca"><input value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className={inputCls} /></Field>
-        <Field label="Modelo"><input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls} /></Field>
-        <Field label="Número de serie"><input value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} className={`${inputCls} font-mono`} /></Field>
-        <Field label="Sistema operativo"><input value={form.operatingSystem} onChange={e => setForm({ ...form, operatingSystem: e.target.value })} className={inputCls} /></Field>
-        <Field label="MAC WiFi"><input value={form.macWifi} onChange={e => setForm({ ...form, macWifi: e.target.value })} className={`${inputCls} font-mono`} /></Field>
-        <Field label="MAC Ethernet"><input value={form.macEth} onChange={e => setForm({ ...form, macEth: e.target.value })} className={`${inputCls} font-mono`} /></Field>
+        {visible.includes('brand')           && <Field label="Marca"><input value={form.brand} onChange={e => setForm({ ...form, brand: e.target.value })} className={inputCls} /></Field>}
+        {visible.includes('model')           && <Field label="Modelo"><input value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls} /></Field>}
+        {visible.includes('serialNumber')    && <Field label="Número de serie"><input value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
+        {visible.includes('imei')            && <Field label="IMEI"><input value={form.imei} onChange={e => setForm({ ...form, imei: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
+        {visible.includes('operatingSystem') && <Field label="Sistema operativo"><input value={form.operatingSystem} onChange={e => setForm({ ...form, operatingSystem: e.target.value })} className={inputCls} /></Field>}
+        {visible.includes('macWifi')         && <Field label="MAC WiFi"><input value={form.macWifi} onChange={e => setForm({ ...form, macWifi: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
+        {visible.includes('macEth')          && <Field label="MAC Ethernet"><input value={form.macEth} onChange={e => setForm({ ...form, macEth: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
         <Field label="Ubicación"><select value={form.locationSlug} onChange={e => setForm({ ...form, locationSlug: e.target.value })} className={inputCls}><option value="">—</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select></Field>
         <Field label="Departamento"><select value={form.departmentSlug} onChange={e => setForm({ ...form, departmentSlug: e.target.value })} className={inputCls}><option value="">—</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select></Field>
         <Field label="Proveedor"><input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} className={inputCls} /></Field>
@@ -592,24 +600,26 @@ const TIPO_BAJA_OPTIONS = [
 function RetireModal({ asset, onClose, onDone }) {
   const [tipoBaja, setTipoBaja] = useState('OBSOLETE');
   const [reason, setReason] = useState('');
+  const [userStatement, setUserStatement] = useState('');
   const [busy, setBusy] = useState(false);
 
   const selected = TIPO_BAJA_OPTIONS.find(o => o.value === tipoBaja) || TIPO_BAJA_OPTIONS[0];
+  const requiereDeclaracion = ['DAMAGE', 'THEFT', 'LOSS'].includes(tipoBaja);
 
   const submit = async () => {
     setBusy(true);
     try {
-      // El backend de /retire espera status (RETIRED/LOST). Lo derivamos del tipoBaja.
       await assetsApi.retire(asset.id, { status: selected.assetStatus, reason });
       toast.success('Activo dado de baja');
-      onDone(selected.assetStatus, reason, tipoBaja);
+      onDone(selected.assetStatus, reason, tipoBaja, requiereDeclaracion ? userStatement : null);
     }
     catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
+  const disabled = busy || !reason || (requiereDeclaracion && !userStatement);
   return (
     <Modal open onClose={onClose} title={`Dar de baja · ${asset.tag}`}
-      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !reason} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Confirmar baja</button></div>}>
+      footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={disabled} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Confirmar baja</button></div>}>
       <div className="space-y-3">
         <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">La baja es <strong>lógica</strong>: el registro se conserva con su historial. Nunca se borra físicamente.</div>
         <Field label="Tipo de baja">
@@ -618,7 +628,15 @@ function RetireModal({ asset, onClose, onDone }) {
           </select>
         </Field>
         <p className="text-xs text-slate-400 -mt-1">Estado final del activo: <span className="font-mono font-medium">{selected.assetStatus}</span></p>
-        <Field label="Motivo / Observaciones *"><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className={inputCls} placeholder="Detalle del incidente, número de denuncia si aplica, fecha aproximada..." /></Field>
+        <Field label="Motivo / Observaciones IT *"><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} className={inputCls} placeholder="Detalle del incidente, número de denuncia si aplica, fecha aproximada..." /></Field>
+        {requiereDeclaracion && (
+          <>
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+              Este tipo de baja requiere la <strong>firma del usuario responsable</strong> que tenía asignado el equipo. La declaración aparecerá en el acta junto a las firmas (IT + Usuario).
+            </div>
+            <Field label="Declaración del usuario responsable *"><textarea value={userStatement} onChange={e => setUserStatement(e.target.value)} rows={3} className={inputCls} placeholder="Explicación de lo ocurrido según el usuario (será firmada por él/ella en el acta)..." /></Field>
+          </>
+        )}
       </div>
     </Modal>
   );

@@ -146,3 +146,4 @@ vite.config.ts.timestamp-*
 nginx/certs/*.key
 nginx/certs/*.crt
 nginx/certs/*.pem
+.DS_Store
