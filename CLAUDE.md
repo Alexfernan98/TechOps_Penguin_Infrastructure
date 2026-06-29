@@ -161,6 +161,87 @@ feat(area): título corto en imperativo
 `area`: `actas`, `assets`, `auth`, `drive`, `dashboard`, `infra`,
 `branding`, `ui`, `db`. No usar `feat:` pelado.
 
+### Mac (dev) → VM (prod): cómo se promueve un cambio
+
+NetHub corre en producción en la VM `dc-hub` (`172.16.10.121`, `/opt/nethub`).
+GitHub es la fuente de verdad — **la VM nunca se edita a mano**, solo recibe
+código vía `git pull` de `main`.
+
+```
+[Mac M2 — dev]          [GitHub]          [VM dc-hub — prod]
+develop dev cycle  ──>   PRs    ──>  main  ──pull──>  /opt/nethub
+                                          ./scripts/deploy.sh
+```
+
+**Flujo completo de un cambio**:
+
+1. **Desarrollo y prueba en el Mac** (Opción A: probar localmente).
+   - `git checkout develop && git pull`
+   - `git checkout -b feat/<nombre>`
+   - Codear → `docker compose restart backend` si tocás JS del backend
+     (el frontend tiene HMR de Vite, no requiere restart).
+   - Probar en `https://localhost` — login, golden path, edge cases.
+   - Si necesitás datos reales para probar a escala, dumpear desde la VM:
+     ```bash
+     ssh dchub@172.16.10.121 'docker compose exec -T postgres pg_dump -U techops -d techopshub --clean --if-exists --no-owner' > /tmp/prod-dump.sql
+     # Cuidado: trae datos sensibles. Usar solo localmente y borrar tras la prueba.
+     ```
+2. **PR a `develop`** y merge (autorización casual del owner).
+3. **STOP** — el owner decide cuándo promover a `main`.
+4. **Release a `main`**:
+   - Bump de versión en `frontend/package.json` y `backend/package.json`
+     (PATCH/MINOR/MAJOR según corresponda).
+   - PR `develop → main`, merge con `--admin`.
+   - `git tag v0.X.Y && git push --tags`.
+   - Actualizar tabla del README §Hito actual (mismo PR o uno aparte).
+5. **Deploy en la VM**: un solo comando.
+   ```bash
+   ssh dchub@172.16.10.121 'cd /opt/nethub && ./scripts/deploy.sh'
+   ```
+   `deploy.sh` hace dump pre-deploy, `git pull`, `docker compose up -d --build`,
+   y muestra el status. Prisma aplica migraciones automáticamente al
+   arrancar el backend.
+
+**Reglas firmes**:
+- La VM nunca se edita a mano. Si necesitás cambiar algo de config, va por
+  `.env` (que vive solo en la VM y no se commitea) o por PR al código.
+- Cada deploy genera un backup pre-deploy en `/opt/backups/db/pre-deploy/`.
+- Cron diario a las 03:00 hace backup completo (DB + uploads) en
+  `/opt/backups/db/daily/` y `/opt/backups/uploads/`. Retención 14 días.
+
+### Rollback (algo se rompió en prod)
+
+**Sin snapshots de Proxmox** — el rollback se hace con git tags + DB dumps:
+
+```bash
+ssh dchub@172.16.10.121
+cd /opt/nethub
+./scripts/rollback.sh v0.X.Y     # tag al que querés volver
+# El script:
+#   1. Hace un "safety dump" del estado actual.
+#   2. git checkout <tag> + docker compose up -d --build.
+#   3. Te muestra los dumps pre-deploy disponibles para restaurar la DB
+#      manualmente si el problema fue de datos, no de código.
+```
+
+Para restaurar un dump puntual:
+```bash
+gunzip -c /opt/backups/db/pre-deploy/nethub-vX.Y.Z-YYYYMMDD-HHMMSS.sql.gz | \
+  docker compose exec -T postgres psql -U techops -d techopshub
+```
+
+**Estrategia de backups en capas**:
+| Capa | Contenido | Frecuencia | Retención |
+|---|---|---|---|
+| Pre-deploy | DB dump antes de cada `deploy.sh` | Por release | Últimos 5 |
+| Daily | DB + uploads | Diario 03:00 | 14 días |
+| Manual | Tag git + dump puntual | Antes de cambios riesgosos | Lo que decida el owner |
+
+Para hacer un backup manual antes de algo riesgoso:
+```bash
+ssh dchub@172.16.10.121 '/opt/nethub/scripts/backup-daily.sh'
+```
+
 ## 6. Estado del repositorio (instrucción permanente)
 
 **Cada vez que un PR se mergea a `main`**, actualizar la sección "Hito
