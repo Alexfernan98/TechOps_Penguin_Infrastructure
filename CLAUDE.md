@@ -209,6 +209,19 @@ develop dev cycle  ──>   PRs    ──>  main  ──pull──>  /opt/nethu
 - Cron diario a las 03:00 hace backup completo (DB + uploads) en
   `/opt/backups/db/daily/` y `/opt/backups/uploads/`. Retención 14 días.
 
+**Edición de `.env` en la VM** (swap de DRIVE_FOLDER_*, SMTP_PASS, etc.):
+`docker compose restart` **NO** relee `env_file` — solo reinicia el proceso
+con el environment ya cargado. Para que el container tome los cambios del
+`.env` hay que **recrearlo**:
+
+```bash
+ssh dchub@172.16.10.121 'cd /opt/nethub && ./scripts/reload-env.sh backend'
+# Verificar:
+ssh dchub@172.16.10.121 'cd /opt/nethub && docker compose exec backend env | grep <VAR>'
+```
+
+`reload-env.sh` hace `docker compose up -d --force-recreate <service>`.
+
 ### Rollback (algo se rompió en prod)
 
 **Sin snapshots de Proxmox** — el rollback se hace con git tags + DB dumps:
