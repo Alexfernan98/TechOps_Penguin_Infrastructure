@@ -358,3 +358,62 @@ model Notification {
   @@index([userId, readAt])
   @@map("notifications")
 }
+
+// ── Almacén / Stock (Sprint 1b) ────────────────────────────────────────────────
+// Grupo gestionable de ítems de stock (networking, fibra óptica, cctv, etc.).
+model StockGroup {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  items StockItem[]
+
+  @@map("stock_groups")
+}
+
+// Ítem de stock con cantidad. Si categorySlug != null es "convertible" (puede
+// desplegarse a un Asset); si es null es consumible puro (cables, fichas, etc.).
+model StockItem {
+  id           String    @id @default(cuid())
+  name         String
+  groupSlug    String
+  categorySlug String?
+  brand        String?
+  model        String?
+  unit         String    @default("unidad")
+  quantity     Int       @default(0)
+  minQuantity  Int?
+  location     String?
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  group     StockGroup      @relation(fields: [groupSlug], references: [slug])
+  movements StockMovement[]
+
+  @@index([groupSlug])
+  @@index([categorySlug])
+  @@index([deletedAt])
+  @@map("stock_items")
+}
+
+// Bitácora inmutable de movimientos de stock. delta +entrada / -salida.
+model StockMovement {
+  id          String   @id @default(cuid())
+  stockItemId String
+  delta       Int
+  reason      String   // INITIAL / PURCHASE / DEPLOY / ADJUST / CONSUME / RETURN
+  assetId     String?  // si un DEPLOY generó un activo (Sprint 1b-2)
+  userId      String?
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  stockItem StockItem @relation(fields: [stockItemId], references: [id])
+
+  @@index([stockItemId])
+  @@map("stock_movements")
+}

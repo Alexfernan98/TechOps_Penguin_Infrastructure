@@ -1,10 +1,12 @@
 const router = require('express').Router();
 const multer = require('multer');
-const ExcelJS = require('exceljs');
 const prisma = require('../../prisma/client');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { audit } = require('../services/auditLog');
 const { notify } = require('../services/notify');
+const { computeNextTag } = require('../services/assetTag');
+const { buildTemplateBuffer, parseUploadedRows } = require('../services/importXlsx');
+const { friendlyPrismaError } = require('../services/prismaError');
 
 // Upload en memoria para parsear plantillas de import (xlsx/csv) sin tocar disco.
 const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
@@ -93,21 +95,6 @@ function shape(a) {
     authorizedUsers: others.map(x => ({ ...x.user, assignmentId: x.id, assignedAt: x.assignedAt })),
     assignments: undefined,
   };
-}
-
-// Próximo TAG correlativo para una categoría (atómico vía transacción en create).
-async function computeNextTag(category, tx = prisma) {
-  const last = await tx.asset.findFirst({
-    where: { categorySlug: category.slug, tag: { startsWith: category.tagPrefix } },
-    orderBy: { tag: 'desc' },
-    select: { tag: true },
-  });
-  let next = 1;
-  if (last) {
-    const m = last.tag.match(/(\d+)$/);
-    if (m) next = parseInt(m[1], 10) + 1;
-  }
-  return `${category.tagPrefix}${String(next).padStart(3, '0')}`;
 }
 
 // ── GET /assets/next-tag?category= ─────────────────────────────────────────────
@@ -787,7 +774,7 @@ async function runImport(rows, defaultCategorySlug) {
         await prisma.asset.create({ data: { tag: nextTag, ...data } });
         result.created++;
       }
-    } catch (e) { result.errors.push({ row: idx, error: e.message }); }
+    } catch (e) { result.errors.push({ row: idx, error: friendlyPrismaError(e) || e.message }); }
   }
   return result;
 }
@@ -812,58 +799,15 @@ router.post('/import-template', authenticate, requireRole('IT_ADMIN'), async (re
   try {
     const { filename, columns } = req.body;
     if (!Array.isArray(columns) || columns.length === 0) return res.status(400).json({ error: 'columns es requerido' });
-
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Activos');
-    const hidden = wb.addWorksheet('_listas'); hidden.state = 'veryHidden';
-
-    ws.columns = columns.map(c => ({ header: c.label || c.key, key: c.key, width: Math.max(14, (c.label || c.key).length + 2) }));
-    const headerRow = ws.getRow(1);
-    headerRow.font = { bold: true, color: { argb: 'FF1E3A8A' } };
-    headerRow.alignment = { vertical: 'middle' };
-    ws.views = [{ state: 'frozen', ySplit: 1 }];
-
-    // Para cada columna con opciones: escribir la lista en la hoja oculta y
-    // aplicar data validation tipo lista a las primeras 500 filas de datos.
-    columns.forEach((c, i) => {
-      if (!Array.isArray(c.options) || c.options.length === 0) return;
-      const colLetter = ws.getColumn(i + 1).letter;
-      const listCol = hidden.getColumn(i + 1);
-      c.options.forEach((opt, r) => { hidden.getCell(r + 1, i + 1).value = opt; });
-      // Referencia ABSOLUTA ($): sin los $, Excel/Sheets desplaza el rango una
-      // fila por cada fila de datos y la lista va perdiendo valores hacia abajo.
-      const ref = `$${listCol.letter}$1:$${listCol.letter}$${c.options.length}`;
-      for (let row = 2; row <= 501; row++) {
-        ws.getCell(`${colLetter}${row}`).dataValidation = {
-          type: 'list', allowBlank: true, formulae: [`_listas!${ref}`],
-          showErrorMessage: true, errorStyle: 'warning',
-          error: 'Elegí un valor de la lista.', errorTitle: 'Valor no válido',
-        };
-      }
-    });
-
-    const buf = await wb.xlsx.writeBuffer();
+    const buf = await buildTemplateBuffer(columns);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${(filename || 'plantilla').replace(/[^\w.-]/g, '_')}.xlsx"`);
-    res.send(Buffer.from(buf));
+    res.send(buf);
   } catch (err) { next(err); }
 });
 
 // ── POST /assets/import-file (sube el .xlsx lleno; el backend lo parsea) ────────
 // multipart: file (xlsx) + defaultCategorySlug + columns (JSON [{key,label}]).
-// Mapea los encabezados a claves internas usando el mismo `columns` spec.
-function cellText(v) {
-  if (v == null) return '';
-  if (v instanceof Date) return v;
-  if (typeof v === 'object') {
-    if (v.text != null) return v.text;                        // hyperlink
-    if (Array.isArray(v.richText)) return v.richText.map(t => t.text).join('');
-    if (v.result != null) return v.result;                    // formula
-    if (v.value != null) return v.value;
-    return '';
-  }
-  return v;
-}
 router.post('/import-file', authenticate, requireRole('IT_ADMIN'), uploadMem.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Falta el archivo' });
@@ -871,28 +815,7 @@ router.post('/import-file', authenticate, requireRole('IT_ADMIN'), uploadMem.sin
     let columns = [];
     try { columns = JSON.parse(req.body.columns || '[]'); } catch { columns = []; }
 
-    // label|key (normalizados) → clave interna.
-    const headerIdx = {};
-    for (const c of columns) { if (c.label) headerIdx[_normLabel(c.label)] = c.key; headerIdx[_normLabel(c.key)] = c.key; }
-    const toKey = (h) => headerIdx[_normLabel(h)] || String(h || '').trim();
-
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(req.file.buffer);
-    const ws = wb.worksheets.find(s => s.state !== 'veryHidden') || wb.worksheets[0];
-    if (!ws) return res.status(400).json({ error: 'El archivo no tiene hojas' });
-
-    const headerRow = ws.getRow(1);
-    const colKey = {}; // índice de columna → clave
-    headerRow.eachCell((cell, col) => { const k = toKey(cellText(cell.value)); if (k) colKey[col] = k; });
-
-    const rows = [];
-    ws.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return;
-      const obj = {};
-      row.eachCell((cell, col) => { const k = colKey[col]; if (k) obj[k] = cellText(cell.value); });
-      if (Object.values(obj).some(v => v != null && String(v).trim() !== '')) rows.push(obj);
-    });
-
+    const rows = await parseUploadedRows(req.file.buffer, columns);
     const result = await runImport(rows, defaultCategorySlug);
     await audit({ req, action: 'CREATE', entityType: 'Asset', entityId: 'bulk-import-xlsx', after: result });
     res.json(result);

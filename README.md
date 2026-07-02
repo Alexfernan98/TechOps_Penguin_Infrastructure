@@ -12,15 +12,23 @@ de IT, Networking, NOC y Ciberseguridad.
 
 ## Hito actual
 
-**Última release a `main`**: 2026-06-18 — **v0.7.0** ([PR #26](https://github.com/Alexfernan98/NetHub_PE1H/pull/26) · [tag](https://github.com/Alexfernan98/NetHub_PE1H/releases/tag/v0.7.0))
+**Última release a `main`**: 2026-07-02 — **v0.8.0** (Sprint 1 · inventario de infraestructura + Almacén)
 
-**Novedades v0.7.0**
-- 🆕 **Equipos compartidos** (PCs del NOC, equipos de turno rotativo): múltiples usuarios asignados con un responsable administrativo. Actas listan a los autorizados; bajas por daño piden firma del operador específico.
-- 🆕 **Restaurar bajas**: revertir activos retirados con motivo registrado en audit log.
-- 🆕 **Sort y filtros consistentes** en Activos, Tickets, Actas, Usuarios, Auditoría — botón ✕ por filtro, "Limpiar todo" verde, "Solo dados de baja" naranja.
-- 🆕 **Versionado SemVer** arrancado — Sidebar muestra la versión real del paquete.
+**Novedades v0.8.0 (Sprint 1)**
+- 🆕 **Inventario más allá de IT**: categorías de **Networking** (switch, firewall, AP), **CCTV** (cámaras) y **Servidores/DC** (server, UPS, rack), con campos propios por tipo (IP de gestión, puertos, rol, tipo de cámara, canal NVR, HA, etc.).
+- 🆕 **Estado "En producción"** para infraestructura instalada; filtro por **dominio** (IT / Networking / CCTV / DC).
+- 🆕 **Módulo Almacén**: stock por cantidad con grupos gestionables, consumibles vs convertibles, movimientos (entrada/salida/ajuste) con bitácora, y alerta de stock bajo.
+- 🆕 **Poner en producción / Dar de alta desde stock**: un ítem convertible genera un activo con TAG automático y descuenta stock, en una transacción.
+- 🆕 **Import masivo con plantilla Excel** (dropdowns de Estado/Condición/Tipo/Ubicación/Grupo) para activos y almacén; TAG autogenerado.
+- 🆕 Mensajes de error claros para datos duplicados (serial/barcode/etc.).
 
-**Lo que está desplegado** (Fases 1-5 + Etapa 2 de Actas + v0.7.0):
+**Release anterior**: v0.7.0 (2026-06-18) — equipos compartidos, restaurar bajas, sort/filtros consistentes, versionado SemVer.
+
+**Lo que está desplegado** (Fases 1-5 + Etapa 2 de Actas + v0.8.0):
+- ✅ **Almacén / Stock**: repuestos y consumibles por cantidad, grupos gestionables,
+  movimientos con historial, despliegue de convertibles a Inventario.
+- ✅ **Inventario de infraestructura**: switches, firewalls, APs, cámaras, servidores,
+  UPS, racks — con sus campos técnicos y estado "En producción".
 
 - ✅ **Autenticación** Google OAuth 2.0 restringida al dominio `@penguin.digital`,
   con refresh token persistido para integración con Drive.

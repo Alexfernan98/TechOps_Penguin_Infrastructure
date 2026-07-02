@@ -75,6 +75,8 @@ app.use('/api/departments',       require('./routes/departments'));
 app.use('/api/locations',         require('./routes/locations'));
 app.use('/api/asset-categories',  require('./routes/assetCategories'));
 app.use('/api/assets',            require('./routes/assets'));
+app.use('/api/stock-groups',      require('./routes/stockGroups'));
+app.use('/api/stock',             require('./routes/stock'));
 app.use('/api/actas',             require('./routes/actas'));
 app.use('/api/tickets',           require('./routes/tickets'));
 app.use('/api/notifications',     require('./routes/notifications'));
@@ -101,6 +103,12 @@ app.use((req, res) => {
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
+  // Errores conocidos de Prisma → mensaje claro en español (también en producción).
+  const friendly = require('./services/prismaError').friendlyPrismaError(err);
+  if (friendly) {
+    const status = err.code === 'P2025' ? 404 : 409;
+    return res.status(status).json({ error: friendly });
+  }
   console.error('Error no manejado:', err);
   res.status(err.status || 500).json({
     error: process.env.NODE_ENV === 'production'

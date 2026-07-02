@@ -337,10 +337,10 @@ JWT_SECRET, COOKIE_SECRET
 
 ## 11. Releases relevantes (referencia rápida)
 
-| PR | Fecha | Contenido |
+| Release | Fecha | Contenido |
 |---|---|---|
-| [#14](https://github.com/Alexfernan98/NetHub_PE1H/pull/14) | 2026-06-17 | Actas v2: campos por categoría, firma usuario en bajas, Drive year/category |
-| [#15](https://github.com/Alexfernan98/NetHub_PE1H/pull/15) | 2026-06-17 | Branding: logo Penguin (pingüino), login redesign, favicons |
+| **v0.8.0** (Sprint 1) | 2026-07-02 | Categorías Networking/CCTV/DC + estado "En producción" + módulo Almacén (stock, movimientos, deploy convertible→activo) + import Excel con dropdowns |
+| **v0.7.0** | 2026-06-18 | Equipos compartidos, restaurar bajas, sort/filtros consistentes, versionado SemVer |
 | [#17](https://github.com/Alexfernan98/NetHub_PE1H/pull/17) | 2026-06-18 | Actas legacy + acceso a actas desde el detalle del activo |
 
 Mantener la tabla limitada a los últimos ~5 hitos. Hitos viejos van al README.
