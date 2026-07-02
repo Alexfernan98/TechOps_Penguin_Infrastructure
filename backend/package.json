@@ -1,6 +1,6 @@
 {
   "name": "nethub-backend",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "NetHub API — Penguin Infrastructure S.A.",
   "main": "src/index.js",
   "scripts": {

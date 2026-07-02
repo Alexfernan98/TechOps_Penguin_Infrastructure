@@ -5,6 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import AssetsPage from '@/pages/AssetsPage';
+import StockPage from '@/pages/StockPage';
 import ActasPage from '@/pages/ActasPage';
 import TicketsPage from '@/pages/TicketsPage';
 import NotificationsPage from '@/pages/NotificationsPage';
@@ -37,6 +38,9 @@ export default function App() {
         <Route path="/notificaciones" element={<NotificationsPage />} />
         <Route path="/assets" element={
           <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN', 'IT_TECH', 'READ_ONLY']}><AssetsPage /></RequireRole>
+        } />
+        <Route path="/stock" element={
+          <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN', 'IT_TECH', 'READ_ONLY']}><StockPage /></RequireRole>
         } />
         <Route path="/audit" element={
           <RequireRole roles={['SUPER_ADMIN', 'IT_ADMIN', 'READ_ONLY']}><AuditPage /></RequireRole>

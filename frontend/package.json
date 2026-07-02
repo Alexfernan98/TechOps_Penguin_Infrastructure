@@ -1,6 +1,6 @@
 {
   "name": "nethub-frontend",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "NetHub UI — Penguin Infrastructure S.A.",
   "type": "module",
   "scripts": {
