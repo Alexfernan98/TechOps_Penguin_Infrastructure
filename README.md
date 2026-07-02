@@ -5,7 +5,7 @@ entrega/devolución/baja, tickets de soporte y operaciones del departamento
 de IT, Networking, NOC y Ciberseguridad.
 
 > **Sede**: PE1H — Hernandarias, Paraguay
-> **Deployment**: On-premise · Docker · MacBook (desarrollo) → Ubuntu Server 24.04 (producción)
+> **Deployment**: On-premise · Docker · MacBook (desarrollo) → VM Ubuntu 24.04 (producción, **en vivo**)
 > **Documentación para colaboradores AI**: ver [CLAUDE.md](CLAUDE.md)
 
 ---
@@ -32,11 +32,14 @@ de IT, Networking, NOC y Ciberseguridad.
 
 - ✅ **Autenticación** Google OAuth 2.0 restringida al dominio `@penguin.digital`,
   con refresh token persistido para integración con Drive.
-- ✅ **Inventario de activos** con TAG correlativo por categoría, importación CSV,
-  barcode scanner (en HTTPS), drawer con detalle/historial/actas.
+- ✅ **Inventario de activos** con TAG correlativo por categoría, import masivo
+  (plantillas Excel con dropdowns / CSV), barcode scanner (en HTTPS), drawer con
+  detalle/historial/actas, filtro por dominio (IT / Networking / CCTV / DC).
 - ✅ **Campos por categoría**: mousepad/soporte no piden MAC ni SN; celular/tablet
-  piden IMEI. 11 categorías base (PC, notebook, monitor, impresora, TV, mouse,
-  mousepad, teclado, soporte, celular, tablet).
+  piden IMEI; switch pide puertos/rol; cámara pide tipo/canal NVR/MP; firewall HA.
+  18 categorías (IT: PC, notebook, monitor, impresora, TV, mouse, mousepad,
+  teclado, soporte, celular, tablet · Networking: switch, firewall, AP · CCTV:
+  cámara · DC: servidor, UPS, rack).
 - ✅ **Actas v2** — entrega, devolución y baja con:
   - Numeración `ENT-2026-NNNN-TAG`, `DEV-...`, `BAJ-...` por tipo y año.
   - Plantilla A4 con logo Penguin embebido y cláusulas adaptadas al grupo
@@ -58,11 +61,20 @@ de IT, Networking, NOC y Ciberseguridad.
   Login redesign con card blanco sobre gradient azul corporativo.
 - ✅ **HTTPS self-signed** + soporte para acceso LAN vía `nip.io`.
 
-**En desarrollo / próximos hitos**:
-- 🟡 Despliegue del servicio en VM Ubuntu 24.04 (planificación en curso).
-- 🟡 Backup automatizado de DB + carpetas Drive.
-- 🟡 Carga masiva del inventario real (post-despliegue) → camino a **v1.0.0**.
-- 🔴 Por definir: módulo de licencias, control de accesos, monitoreo.
+**Infraestructura de producción** (operativa):
+- ✅ Desplegado en VM Ubuntu 24.04 (LAN), acceso HTTPS vía `nip.io`.
+- ✅ Backup automático diario de DB + uploads (cron, retención 14 días) y dump
+  pre-deploy antes de cada release.
+- ✅ Flujo Mac (dev) → GitHub → VM (`./scripts/deploy.sh`) con rollback por tags.
+
+**Roadmap (próximos sprints)**:
+- 🟡 **Sprint 2** — Mapa interactivo del sitio (plano + pins por categoría) y
+  puertos/SFPs de los switches (qué transceiver hay en cada puerto y a qué conecta).
+- 🟡 **Sprint 3** — Off-boarding de funcionarios (baja + devolución de equipos + accesos).
+- 🟡 **Sprint 4** — Mantenimientos programados.
+- 🟡 **Sprint 5** — Licencias (Autocad, Fortigate, SCADA, SQL) con vencimientos.
+- 🟡 **Sprint 6** — Auditorías de equipos (integración Wazuh + Workspace).
+- 🎯 **v1.0.0** cuando el sistema esté consolidado con los datos reales cargados.
 
 La app está en evolución constante — se documentan aquí los hitos visibles
 al usuario en cada release a `main`.
@@ -78,6 +90,7 @@ al usuario en cada release a `main`.
 | Base de datos | PostgreSQL 16 (db: `techopshub`, user: `techops`) |
 | ORM | Prisma |
 | PDF | Puppeteer + plantilla HTML A4 |
+| Excel | ExcelJS (plantillas de import con listas desplegables) |
 | Storage externo | Google Drive (scopes `drive.file` + `drive.readonly`) |
 | Email | Nodemailer + SMTP Google Workspace (fallback a console.log) |
 | Contenedores | Docker + Docker Compose |
@@ -203,6 +216,42 @@ docker compose exec backend npx prisma studio
 
 ---
 
+## Producción y despliegue
+
+NetHub corre en producción en una **VM Ubuntu 24.04** (LAN de PE1H), accesible por
+HTTPS vía `nip.io`. El desarrollo se hace en la Mac; a producción solo llega
+código por `git pull` — **la VM nunca se edita a mano**.
+
+**Flujo de release** (Mac → GitHub → VM):
+1. `feat/*` → PR a `develop` → merge.
+2. Bump de versión (`frontend/` + `backend/` `package.json`) al promover a `main`.
+3. PR `develop` → `main` → merge → `git tag vX.Y.Z && git push --tags`.
+4. En la VM, un solo comando:
+   ```bash
+   cd /opt/nethub && ./scripts/deploy.sh
+   ```
+   `deploy.sh` hace: dump pre-deploy → `git pull` → `docker compose up -d --build`
+   → sincroniza dependencias del contenedor (`npm install --include=dev` +
+   `prisma generate`, porque el volumen `node_modules` persiste deps viejas) →
+   aplica migraciones Prisma → muestra estado.
+
+**Rollback** (si un deploy rompe algo):
+```bash
+./scripts/rollback.sh vX.Y.Z          # vuelve al tag anterior (safety dump + rebuild)
+# y si hace falta restaurar datos, el dump pre-deploy está en:
+#   /opt/backups/db/pre-deploy/
+```
+Las migraciones son aditivas (no borran), así que volver el código a una versión
+anterior no rompe la DB.
+
+**Backups**: cron diario (`scripts/backup-daily.sh`) de DB + uploads en
+`/opt/backups/` con retención de 14 días; más un dump pre-deploy por cada release.
+
+**Cambios en `.env` de la VM**: `docker compose restart` NO relee `.env` — usar
+`./scripts/reload-env.sh <servicio>` (hace `up -d --force-recreate`).
+
+---
+
 ## Estructura del proyecto
 
 ```
@@ -217,6 +266,9 @@ NetHub_PE1H/
 │   │   ├── services/
 │   │   │   ├── actaTemplate.js      # HTML del acta
 │   │   │   ├── drive.js             # OAuth tokens por user, subfolders
+│   │   │   ├── assetTag.js          # TAG correlativo por categoría
+│   │   │   ├── importXlsx.js        # Plantillas Excel (dropdowns) + parseo
+│   │   │   ├── prismaError.js       # Mensajes claros de errores de Prisma
 │   │   │   ├── email.js, notify.js, cron.js, auditLog.js
 │   │   │   └── assets/logo-penguin.png
 │   │   └── index.js
@@ -236,8 +288,12 @@ NetHub_PE1H/
 │   └── public/                      # Logo, favicons
 ├── nginx/                           # Reverse proxy + HTTPS
 ├── scripts/
-│   ├── setup.sh
-│   └── gen-certs.sh
+│   ├── setup.sh                     # Setup inicial (dev)
+│   ├── gen-certs.sh                 # Certs HTTPS self-signed para LAN
+│   ├── deploy.sh                    # Deploy en la VM (pull + build + migraciones)
+│   ├── rollback.sh                  # Volver a un tag anterior + restaurar DB
+│   ├── backup-daily.sh              # Backup diario DB + uploads (cron)
+│   └── reload-env.sh                # Recrear contenedor tras editar .env
 ├── docker-compose.yml
 ├── .env.example                     # Template (versionado)
 └── .env                             # Secrets (gitignored)
