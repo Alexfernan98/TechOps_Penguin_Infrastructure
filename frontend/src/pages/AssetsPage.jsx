@@ -15,9 +15,9 @@ import BarcodeScanner from '@/components/ui/BarcodeScanner';
 import UserPicker from '@/components/ui/UserPicker';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import useAuthStore from '@/store/authStore';
-import { fieldsForCategory, showsField } from '@/lib/categoryFields';
+import { fieldsForCategory, showsField, domainOf, isAssignable, DOMAINS, CAMERA_TYPES, HA_MODES, roleOptions, importColumns, FIELD_LABELS, headerToKey } from '@/lib/categoryFields';
 
-const STATUSES   = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
+const STATUSES   = ['AVAILABLE', 'IN_PRODUCTION', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
 const CONDITIONS = ['GOOD', 'FAIR', 'POOR', 'DAMAGED'];
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('es-PY') : '—';
 const daysUntil = (d) => d ? Math.ceil((new Date(d) - Date.now()) / 86400000) : null;
@@ -41,7 +41,7 @@ export default function AssetsPage() {
   const [loading, setLoading] = useState(true);
   const [warranty, setWarranty] = useState({ assets: [], count: 0 });
 
-  const [f, setF] = useState({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', onlyInactive: '' });
+  const [f, setF] = useState({ search: '', domain: '', category: '', status: '', condition: '', dept: '', location: '', user: '', onlyInactive: '' });
   const [sort, setSort] = useState({ by: 'tag', dir: 'asc' });
   const [page, setPage] = useState(1);
 
@@ -107,7 +107,7 @@ export default function AssetsPage() {
   useEffect(() => { setPage(1); }, [f]);
 
   const toggleSort = (by) => setSort(s => ({ by, dir: s.by === by && s.dir === 'asc' ? 'desc' : 'asc' }));
-  const clearFilters = () => setF({ search: '', category: '', status: '', condition: '', dept: '', location: '', user: '', onlyInactive: '' });
+  const clearFilters = () => setF({ search: '', domain: '', category: '', status: '', condition: '', dept: '', location: '', user: '', onlyInactive: '' });
 
   const doExport = () => { window.open(`${API_BASE}${assetsApi.exportUrl(params)}`, '_blank'); };
 
@@ -150,7 +150,8 @@ export default function AssetsPage() {
           <input value={f.search} onChange={e => setF({ ...f, search: e.target.value })} placeholder="Buscar por TAG, marca, modelo, serial, usuario…" className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
         </div>
         <div className="grid grid-cols-2 md:flex md:flex-wrap items-stretch md:items-center gap-2">
-          <FilterSelect value={f.category}  onChange={v => setF({ ...f, category: v })}  placeholder="Todas las categorías"   options={cats.map(c => ({ value: c.slug, label: c.name }))} />
+          <FilterSelect value={f.domain}    onChange={v => setF({ ...f, domain: v, category: '' })} placeholder="Todos los dominios"    options={DOMAINS.map(d => ({ value: d.key, label: d.label }))} />
+          <FilterSelect value={f.category}  onChange={v => setF({ ...f, category: v })}  placeholder="Todas las categorías"   options={cats.filter(c => !f.domain || domainOf(c.slug) === f.domain).map(c => ({ value: c.slug, label: c.name }))} />
           <FilterSelect value={f.status}    onChange={v => setF({ ...f, status: v })}    placeholder="Cualquier estado"       options={STATUSES.map(s => ({ value: s, label: ASSET_STATUS_LABEL[s] }))} />
           <FilterSelect value={f.condition} onChange={v => setF({ ...f, condition: v })} placeholder="Cualquier condición"    options={CONDITIONS.map(c => ({ value: c, label: CONDITION_LABEL[c] }))} />
           <FilterSelect value={f.dept}      onChange={v => setF({ ...f, dept: v })}      placeholder="Todos los departamentos" options={depts.map(d => ({ value: d.slug, label: d.name }))} />
@@ -225,7 +226,7 @@ export default function AssetsPage() {
 
       {selectedId && <AssetDrawer id={selectedId} canWrite={canWrite} users={users} locs={locs} depts={depts} onClose={() => setSelectedId(null)} onRefresh={onRefresh} />}
       <NewAssetModal open={showNew} cats={cats} locs={locs} depts={depts} onClose={() => setShowNew(false)} onSaved={(a) => { setShowNew(false); onRefresh(); setSelectedId(a.id); }} />
-      <ImportModal open={showImport} onClose={() => setShowImport(false)} onDone={onRefresh} />
+      <ImportModal open={showImport} cats={cats} locs={locs} depts={depts} onClose={() => setShowImport(false)} onDone={onRefresh} />
       <BarcodeScanner open={showScanner} onDetect={onScanned} onClose={() => setShowScanner(false)} />
     </div>
   );
@@ -310,6 +311,9 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
   if (!asset) return <Drawer open onClose={onClose} title="Cargando…" width={620}><p className="text-slate-400">Cargando…</p></Drawer>;
 
   const afterMutation = (actaSeed) => { load(); onRefresh(); setModal(null); if (actaSeed) setPendingActa(actaSeed); };
+  // Solo activos de IT se entregan a funcionarios (assign / devolución / actas).
+  // Networking / CCTV / DC son infraestructura: se ubican, no se asignan a personas.
+  const assignable = isAssignable(asset.category?.slug || asset.categorySlug);
 
   return (
     <>
@@ -322,10 +326,10 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
               {canWrite && asset.status !== 'RETIRED' && asset.status !== 'LOST' && <>
                 <button onClick={() => setModal('edit')} className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Editar</button>
                 <button onClick={() => setModal('status')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Cambiar estado</button>
-                {asset.status === 'ASSIGNED'
+                {assignable && (asset.status === 'ASSIGNED'
                   ? <button onClick={() => setModal('return')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Devolver</button>
-                  : <button onClick={() => setModal('assign')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Asignar</button>}
-                <button onClick={() => setModal('legacy')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50" title="Registrar un acta que ya fue firmada antes de NetHub (solo se pega el link al PDF en Drive)">Acta legacy</button>
+                  : <button onClick={() => setModal('assign')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50">Asignar</button>)}
+                {assignable && <button onClick={() => setModal('legacy')} className="px-3 py-2 border border-slate-200 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50" title="Registrar un acta que ya fue firmada antes de NetHub (solo se pega el link al PDF en Drive)">Acta legacy</button>}
               </>}
             </div>
             <div className="flex gap-2">
@@ -354,15 +358,24 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
             <KV label="Marca / Modelo">{`${asset.brand || ''} ${asset.model || ''}`.trim() || '—'}</KV>
             <KV label="Estado">{ASSET_STATUS_LABEL[asset.status]}</KV>
             <KV label="Condición"><ConditionText condition={asset.condition} /></KV>
-            <KV label={asset.shared ? 'Responsable administrativo' : 'Asignado a'}>{asset.assignedTo ? shortName(asset.assignedTo) : '—'}</KV>
-            {asset.shared && (
+            {assignable && <KV label={asset.shared ? 'Responsable administrativo' : 'Asignado a'}>{asset.assignedTo ? shortName(asset.assignedTo) : '—'}</KV>}
+            {assignable && asset.shared && (
               <KV label="Usuarios autorizados">
                 {(asset.authorizedUsers || []).length === 0
                   ? <span className="text-slate-400">—</span>
                   : <div className="flex flex-wrap gap-1">{(asset.authorizedUsers || []).map(u => <span key={u.id} className="px-2 py-0.5 text-xs rounded bg-blue-50 text-blue-700 border border-blue-200">{shortName(u)}</span>)}</div>}
               </KV>
             )}
-            {asset.shared && <KV label="Modalidad"><span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">👥 Equipo compartido</span></KV>}
+            {assignable && asset.shared && <KV label="Modalidad"><span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">👥 Equipo compartido</span></KV>}
+            {asset.internalCode    && <KV label="Código interno"><span className="font-mono">{asset.internalCode}</span></KV>}
+            {asset.ipManagement    && <KV label="IP de gestión"><span className="font-mono">{asset.ipManagement}</span></KV>}
+            {asset.cameraType      && <KV label="Tipo de cámara">{asset.cameraType}{asset.megapixels ? ` · ${asset.megapixels} MP` : ''}</KV>}
+            {asset.nvrChannel      && <KV label="Canal NVR">{asset.nvrChannel}</KV>}
+            {asset.ports != null   && <KV label="Puertos">{asset.ports}</KV>}
+            {asset.role            && <KV label="Rol">{asset.role}</KV>}
+            {asset.haMode          && <KV label="Modo HA">{asset.haMode}</KV>}
+            {asset.haPeerAssetId   && <KV label="Peer HA"><span className="font-mono">{asset.haPeerAssetId}</span></KV>}
+            {asset.displayLocation && <KV label="Ubicación física">{asset.displayLocation}</KV>}
             <KV label="Departamento">{depts.find(d => d.slug === asset.departmentSlug)?.name || '—'}</KV>
             <KV label="Ubicación">{asset.location?.name || '—'}</KV>
             <KV label="Fecha de compra">{fmtDate(asset.purchaseDate)}</KV>
@@ -450,6 +463,27 @@ function AssetDrawer({ id, canWrite, users, locs, depts, onClose, onRefresh }) {
 const inputCls = 'mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-blue-500';
 const Field = ({ label, children }) => <div><label className="text-xs font-medium text-slate-500">{label}</label>{children}</div>;
 
+// Campos extra de Networking / CCTV / DC. Renderiza solo los que `visible`
+// incluye, leyendo/escribiendo en form/setForm. Compartido por New y Edit.
+function ExtraFields({ form, setForm, visible, categorySlug }) {
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const roles = roleOptions(categorySlug);
+  return (
+    <>
+      {visible.includes('ipManagement')    && <Field label="IP de gestión"><input value={form.ipManagement || ''} onChange={set('ipManagement')} placeholder="10.0.0.1" className={`${inputCls} font-mono`} /></Field>}
+      {visible.includes('ports')           && <Field label="N° de puertos"><input type="number" min="0" value={form.ports ?? ''} onChange={set('ports')} className={inputCls} /></Field>}
+      {visible.includes('role')            && <Field label="Rol"><select value={form.role || ''} onChange={set('role')} className={inputCls}><option value="">—</option>{roles.map(r => <option key={r} value={r}>{r}</option>)}</select></Field>}
+      {visible.includes('haMode')          && <Field label="Modo HA"><select value={form.haMode || ''} onChange={set('haMode')} className={inputCls}><option value="">—</option>{HA_MODES.map(m => <option key={m} value={m}>{m}</option>)}</select></Field>}
+      {visible.includes('haPeerAssetId')   && <Field label="Peer HA (TAG del equipo)"><input value={form.haPeerAssetId || ''} onChange={set('haPeerAssetId')} placeholder="PE1H-NET-FW-002" className={`${inputCls} font-mono`} /></Field>}
+      {visible.includes('cameraType')      && <Field label="Tipo de cámara"><select value={form.cameraType || ''} onChange={set('cameraType')} className={inputCls}><option value="">—</option>{CAMERA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></Field>}
+      {visible.includes('megapixels')      && <Field label="Megapíxeles"><input type="number" min="0" step="1" value={form.megapixels ?? ''} onChange={set('megapixels')} className={inputCls} /></Field>}
+      {visible.includes('internalCode')    && <Field label="Código interno"><input value={form.internalCode || ''} onChange={set('internalCode')} placeholder="DC.H 120 / A11 / M14" className={`${inputCls} font-mono`} /></Field>}
+      {visible.includes('nvrChannel')      && <Field label="Canal NVR"><input value={form.nvrChannel || ''} onChange={set('nvrChannel')} placeholder="D1 / Surveillance" className={inputCls} /></Field>}
+      {visible.includes('displayLocation') && <div className="col-span-2"><Field label="Ubicación física (descripción)"><input value={form.displayLocation || ''} onChange={set('displayLocation')} placeholder="PTZ Caseta Mara2 / Comedor Central-1" className={inputCls} /></Field></div>}
+    </>
+  );
+}
+
 // Input numérico de 6 dígitos con botón "Escanear" al lado. Pad-zero al blur.
 function BarcodeField({ value, onChange }) {
   const [scan, setScan] = useState(false);
@@ -479,7 +513,7 @@ function BarcodeField({ value, onChange }) {
 }
 
 function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
-  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', imei: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '', shared: false };
+  const empty = { categorySlug: '', barcode: '', brand: '', model: '', serialNumber: '', operatingSystem: '', macWifi: '', macEth: '', imei: '', status: 'AVAILABLE', condition: 'GOOD', locationSlug: '', departmentSlug: '', purchaseDate: '', warrantyUntil: '', vendor: '', details: '', shared: false, ipManagement: '', internalCode: '', nvrChannel: '', cameraType: '', megapixels: '', ports: '', role: '', haMode: '', haPeerAssetId: '', displayLocation: '' };
   const [form, setForm] = useState(empty);
   const [nextTag, setNextTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -499,7 +533,7 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
     <Modal open={open} onClose={onClose} title="Nuevo activo" width={640}
       footer={<div className="flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button><button onClick={submit} disabled={busy || !form.categorySlug} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Crear activo</button></div>}>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Categoría *"><select value={form.categorySlug} onChange={e => setForm({ ...form, categorySlug: e.target.value })} className={inputCls}><option value="">Seleccionar…</option>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select></Field>
+        <Field label="Categoría *"><select value={form.categorySlug} onChange={e => { const cs = e.target.value; setForm({ ...form, categorySlug: cs, status: isAssignable(cs) ? 'AVAILABLE' : 'IN_PRODUCTION' }); }} className={inputCls}><option value="">Seleccionar…</option>{cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}</select></Field>
         <Field label="TAG (auto)"><input value={nextTag} readOnly className={`${inputCls} bg-slate-50 font-mono`} placeholder="—" /></Field>
         <div className="col-span-2">
           <Field label="Código de barras (opcional · 6 dígitos)">
@@ -513,7 +547,8 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
         {visible.includes('operatingSystem') && <Field label="Sistema operativo"><input value={form.operatingSystem} onChange={e => setForm({ ...form, operatingSystem: e.target.value })} className={inputCls} /></Field>}
         {visible.includes('macWifi')         && <Field label="MAC WiFi"><input value={form.macWifi} onChange={e => setForm({ ...form, macWifi: e.target.value })} placeholder="AA:BB:CC:DD:EE:FF" className={`${inputCls} font-mono`} /></Field>}
         {visible.includes('macEth')          && <Field label="MAC Ethernet"><input value={form.macEth} onChange={e => setForm({ ...form, macEth: e.target.value })} placeholder="AA:BB:CC:DD:EE:FF" className={`${inputCls} font-mono`} /></Field>}
-        <Field label="Estado inicial"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className={inputCls}>{['AVAILABLE', 'REPAIR', 'DAMAGED', 'LOAN'].map(s => <option key={s} value={s}>{ASSET_STATUS_LABEL[s]}</option>)}</select></Field>
+        <ExtraFields form={form} setForm={setForm} visible={visible} categorySlug={form.categorySlug} />
+        <Field label="Estado inicial"><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} className={inputCls}>{(isAssignable(form.categorySlug) ? ['AVAILABLE', 'REPAIR', 'DAMAGED', 'LOAN'] : ['IN_PRODUCTION', 'AVAILABLE', 'REPAIR', 'DAMAGED']).map(s => <option key={s} value={s}>{ASSET_STATUS_LABEL[s]}</option>)}</select></Field>
         <Field label="Condición"><select value={form.condition} onChange={e => setForm({ ...form, condition: e.target.value })} className={inputCls}>{CONDITIONS.map(c => <option key={c} value={c}>{CONDITION_LABEL[c]}</option>)}</select></Field>
         <Field label="Ubicación"><select value={form.locationSlug} onChange={e => setForm({ ...form, locationSlug: e.target.value })} className={inputCls}><option value="">—</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select></Field>
         <Field label="Departamento"><select value={form.departmentSlug} onChange={e => setForm({ ...form, departmentSlug: e.target.value })} className={inputCls}><option value="">—</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select></Field>
@@ -521,23 +556,26 @@ function NewAssetModal({ open, cats, locs, depts, onClose, onSaved }) {
         <Field label="Garantía hasta"><input type="date" value={form.warrantyUntil} onChange={e => setForm({ ...form, warrantyUntil: e.target.value })} className={inputCls} /></Field>
         <div className="col-span-2"><Field label="Proveedor"><input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} className={inputCls} /></Field></div>
         <div className="col-span-2"><Field label="Detalles / Specs"><textarea value={form.details} onChange={e => setForm({ ...form, details: e.target.value })} rows={2} className={inputCls} /></Field></div>
-        <div className="col-span-2">
-          <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-            <input type="checkbox" checked={form.shared} onChange={e => setForm({ ...form, shared: e.target.checked })} className="mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-slate-700">Equipo compartido entre varios usuarios</p>
-              <p className="text-xs text-slate-500">Útil para PCs del NOC, equipos de turno rotativo, etc. Permite asignar múltiples usuarios simultáneamente bajo un responsable principal.</p>
-            </div>
-          </label>
-        </div>
+        {isAssignable(form.categorySlug) && (
+          <div className="col-span-2">
+            <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" checked={form.shared} onChange={e => setForm({ ...form, shared: e.target.checked })} className="mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-slate-700">Equipo compartido entre varios usuarios</p>
+                <p className="text-xs text-slate-500">Útil para PCs del NOC, equipos de turno rotativo, etc. Permite asignar múltiples usuarios simultáneamente bajo un responsable principal.</p>
+              </div>
+            </label>
+          </div>
+        )}
       </div>
     </Modal>
   );
 }
 
 function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
-  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', imei: asset.imei || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '', shared: asset.shared === true });
-  const visible = fieldsForCategory(asset.categorySlug || asset.category?.slug);
+  const catSlug = asset.categorySlug || asset.category?.slug;
+  const [form, setForm] = useState({ barcode: asset.barcode || '', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', operatingSystem: asset.operatingSystem || '', macWifi: asset.macWifi || '', macEth: asset.macEth || '', imei: asset.imei || '', locationSlug: asset.locationSlug || '', departmentSlug: asset.departmentSlug || '', vendor: asset.vendor || '', warrantyUntil: asset.warrantyUntil ? asset.warrantyUntil.slice(0, 10) : '', details: asset.details || '', notes: asset.notes || '', shared: asset.shared === true, ipManagement: asset.ipManagement || '', internalCode: asset.internalCode || '', nvrChannel: asset.nvrChannel || '', cameraType: asset.cameraType || '', megapixels: asset.megapixels ?? '', ports: asset.ports ?? '', role: asset.role || '', haMode: asset.haMode || '', haPeerAssetId: asset.haPeerAssetId || '', displayLocation: asset.displayLocation || '' });
+  const visible = fieldsForCategory(catSlug);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     setBusy(true);
@@ -561,21 +599,24 @@ function EditAssetModal({ asset, locs, depts, onClose, onSaved }) {
         {visible.includes('operatingSystem') && <Field label="Sistema operativo"><input value={form.operatingSystem} onChange={e => setForm({ ...form, operatingSystem: e.target.value })} className={inputCls} /></Field>}
         {visible.includes('macWifi')         && <Field label="MAC WiFi"><input value={form.macWifi} onChange={e => setForm({ ...form, macWifi: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
         {visible.includes('macEth')          && <Field label="MAC Ethernet"><input value={form.macEth} onChange={e => setForm({ ...form, macEth: e.target.value })} className={`${inputCls} font-mono`} /></Field>}
+        <ExtraFields form={form} setForm={setForm} visible={visible} categorySlug={catSlug} />
         <Field label="Ubicación"><select value={form.locationSlug} onChange={e => setForm({ ...form, locationSlug: e.target.value })} className={inputCls}><option value="">—</option>{locs.map(l => <option key={l.slug} value={l.slug}>{l.name}</option>)}</select></Field>
         <Field label="Departamento"><select value={form.departmentSlug} onChange={e => setForm({ ...form, departmentSlug: e.target.value })} className={inputCls}><option value="">—</option>{depts.map(d => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select></Field>
         <Field label="Proveedor"><input value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} className={inputCls} /></Field>
         <Field label="Garantía hasta"><input type="date" value={form.warrantyUntil} onChange={e => setForm({ ...form, warrantyUntil: e.target.value })} className={inputCls} /></Field>
         <div className="col-span-2"><Field label="Detalles"><textarea value={form.details} onChange={e => setForm({ ...form, details: e.target.value })} rows={2} className={inputCls} /></Field></div>
         <div className="col-span-2"><Field label="Observaciones"><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} className={inputCls} /></Field></div>
-        <div className="col-span-2">
-          <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
-            <input type="checkbox" checked={form.shared} onChange={e => setForm({ ...form, shared: e.target.checked })} className="mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-slate-700">Equipo compartido entre varios usuarios</p>
-              <p className="text-xs text-slate-500">Permite asignar múltiples usuarios simultáneamente bajo un responsable principal (ej. PC del NOC).</p>
-            </div>
-          </label>
-        </div>
+        {isAssignable(catSlug) && (
+          <div className="col-span-2">
+            <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" checked={form.shared} onChange={e => setForm({ ...form, shared: e.target.checked })} className="mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-slate-700">Equipo compartido entre varios usuarios</p>
+                <p className="text-xs text-slate-500">Permite asignar múltiples usuarios simultáneamente bajo un responsable principal (ej. PC del NOC).</p>
+              </div>
+            </label>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -724,7 +765,7 @@ function StatusModal({ asset, onClose, onDone }) {
   const [condition, setCondition] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
-  const opts = ['REPAIR', 'DAMAGED', 'LOAN', 'AVAILABLE'];
+  const opts = ['REPAIR', 'DAMAGED', 'LOAN', 'AVAILABLE', 'IN_PRODUCTION'];
   const submit = async () => {
     setBusy(true);
     try { await assetsApi.changeStatus(asset.id, { status, condition: condition || undefined, reason }); toast.success('Estado actualizado'); onDone(); }
@@ -972,33 +1013,109 @@ function ActaOfferModal({ seed, onClose }) {
   );
 }
 
-// ─── ImportModal (importación masiva de activos por CSV) ───────────────────────
-function ImportModal({ open, onClose, onDone }) {
+// ─── ImportModal (importación masiva de activos, por categoría) ────────────────
+// Parser CSV con soporte de campos entre comillas ("a,b") y delimitador , o ;.
+function parseCsvLine(line, delim = ',') {
+  const out = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === delim) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.map(c => c.trim());
+}
+
+// Construye el spec de columnas de la plantilla para una categoría, con las
+// opciones de dropdown de cada columna restringida. Fuente única de verdad de
+// qué es lista y qué valores tiene — se usa para generar la plantilla y para
+// mapear los encabezados al importar el .xlsx.
+function templateColumns(slug, locs, depts) {
+  return importColumns(slug).map(key => {
+    const label = FIELD_LABELS[key] || key;
+    let options;
+    if (key === 'status')        options = (isAssignable(slug) ? ['AVAILABLE', 'REPAIR', 'DAMAGED', 'LOAN'] : ['IN_PRODUCTION', 'AVAILABLE', 'REPAIR', 'DAMAGED']).map(v => ASSET_STATUS_LABEL[v]);
+    else if (key === 'condition')       options = CONDITIONS.map(c => CONDITION_LABEL[c]);
+    else if (key === 'cameraType')      options = CAMERA_TYPES;
+    else if (key === 'role')            options = roleOptions(slug);
+    else if (key === 'haMode')          options = HA_MODES;
+    else if (key === 'locationSlug')    options = (locs || []).map(l => l.name);
+    else if (key === 'departmentSlug')  options = (depts || []).map(d => d.name);
+    return options && options.length ? { key, label, options } : { key, label };
+  });
+}
+
+function ImportModal({ open, cats = [], locs = [], depts = [], onClose, onDone }) {
+  const [category, setCategory] = useState('');
   const [text, setText]   = useState('');
+  const [file, setFile]   = useState(null);
   const [busy, setBusy]   = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr]     = useState(null);
 
-  useEffect(() => { if (open) { setText(''); setResult(null); setErr(null); } }, [open]);
+  useEffect(() => { if (open) { setText(''); setFile(null); setResult(null); setErr(null); setCategory(''); } }, [open]);
 
+  const catName = cats.find(c => c.slug === category)?.name;
+  const columns = category ? templateColumns(category, locs, depts) : [];
+
+  const downloadTemplate = async () => {
+    if (!category) return;
+    setErr(null);
+    try {
+      const blob = await assetsApi.importTemplate(`plantilla_${category}`, columns);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `plantilla_${category}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) { setErr('No se pudo generar la plantilla: ' + (e.response?.data?.error || e.message)); }
+  };
+
+  // CSV robusto: detecta delimitador (, o ;) y mapea encabezados → claves.
   const parseCsv = (raw) => {
     const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
     if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim());
+    const delim = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ',';
+    const split = (line) => parseCsvLine(line, delim);
+    const headers = split(lines[0]).map(headerToKey);
     return lines.slice(1).map(line => {
-      const cells = line.split(',').map(c => c.trim());
+      const cells = split(line);
       const row = {};
-      headers.forEach((h, i) => { row[h] = cells[i] ?? ''; });
+      headers.forEach((h, i) => { if (h) row[h] = cells[i] ?? ''; });
       return row;
     });
+  };
+
+  const onFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setErr(null);
+    if (/\.xlsx$/i.test(f.name)) { setFile(f); setText(''); }
+    else { // csv / texto
+      setFile(null);
+      const reader = new FileReader();
+      reader.onload = () => setText(String(reader.result || ''));
+      reader.readAsText(f, 'utf-8');
+    }
   };
 
   const submit = async () => {
     setBusy(true); setErr(null); setResult(null);
     try {
-      const rows = parseCsv(text);
-      if (rows.length === 0) throw new Error('No se detectaron filas (verificá que el CSV tenga encabezados y datos).');
-      const r = await assetsApi.import(rows);
+      if (!category) throw new Error('Elegí el tipo de activo primero.');
+      let r;
+      if (file) {
+        r = await assetsApi.importFile(file, columns, category);
+      } else {
+        const rows = parseCsv(text);
+        if (rows.length === 0) throw new Error('No se detectaron filas (verificá encabezados + al menos una fila).');
+        r = await assetsApi.import(rows, category);
+      }
       setResult(r);
       toast.success(`Import OK: ${r.created || 0} creados · ${r.updated || 0} actualizados`);
       onDone?.();
@@ -1006,21 +1123,33 @@ function ImportModal({ open, onClose, onDone }) {
     finally { setBusy(false); }
   };
 
+  const canProcess = !!category && (!!file || !!text.trim());
+
   return (
-    <Modal open={open} onClose={onClose} title="Importar activos (CSV)" width={680}
+    <Modal open={open} onClose={onClose} title="Importar activos" width={720}
       footer={
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cerrar</button>
-          {!result && <button onClick={submit} disabled={busy || !text.trim()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">Procesar CSV</button>}
+          {!result && <button onClick={submit} disabled={busy || !canProcess} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg disabled:opacity-50">{busy ? 'Procesando…' : 'Procesar'}</button>}
         </div>
       }
     >
       <div className="space-y-3">
         <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-700">
-          Si el <strong>TAG</strong> existe, se <strong>actualiza</strong>. Si no existe, se <strong>crea</strong>.
-          Se validan TAG único, SN único y formato de MAC. Cada fila genera un evento de auditoría.
-          <br /><br />
-          Columnas reconocidas: <code className="text-xs font-mono">tag, categorySlug, brand, model, serialNumber, macWifi, macEth, operatingSystem, status, condition, departmentSlug, locationSlug, vendor, purchaseDate, warrantyUntil, details, notes</code>.
+          <strong>1.</strong> Elegí el tipo de activo y <strong>descargá la plantilla Excel</strong> — trae listas desplegables en Estado, Condición, Tipo, Ubicación, etc. <strong>2.</strong> Completá en Excel (dejá <strong>TAG vacío</strong> para que se autogenere el correlativo). <strong>3.</strong> Subí el mismo <code className="text-xs">.xlsx</code>.
+          <br />Si el TAG existe se <strong>actualiza</strong>; si va vacío o es nuevo se <strong>crea</strong>. Cada fila queda en auditoría.
+        </div>
+
+        <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+          <Field label="Tipo de activo *">
+            <select value={category} onChange={e => { setCategory(e.target.value); setFile(null); setText(''); }} className={inputCls}>
+              <option value="">Seleccionar…</option>
+              {cats.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+            </select>
+          </Field>
+          <button onClick={downloadTemplate} disabled={!category} className="px-3 py-2 border border-blue-300 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-50 disabled:opacity-40 inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Download className="w-4 h-4" /> Descargar plantilla Excel
+          </button>
         </div>
 
         {err && <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700 whitespace-pre-wrap">{err}</div>}
@@ -1033,20 +1162,33 @@ function ImportModal({ open, onClose, onDone }) {
               <li>Actualizados: <strong>{result.updated || 0}</strong></li>
               <li>Omitidos: <strong>{result.skipped || 0}</strong></li>
               {Array.isArray(result.errors) && result.errors.length > 0 && (
-                <li className="text-rose-700">Errores: <strong>{result.errors.length}</strong> (revisar logs)</li>
+                <li className="text-rose-700">Errores: <strong>{result.errors.length}</strong></li>
               )}
             </ul>
+            {Array.isArray(result.errors) && result.errors.length > 0 && (
+              <ul className="mt-2 text-xs text-rose-600 max-h-32 overflow-y-auto">
+                {result.errors.slice(0, 20).map((er, i) => <li key={i}>Fila {er.row + 1}: {er.error}</li>)}
+              </ul>
+            )}
           </div>
+        ) : category ? (
+          <>
+            <Field label="Subir archivo (.xlsx o .csv)">
+              <input type="file" accept=".xlsx,.csv,text/csv" onChange={onFile} className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              {file && <p className="mt-1 text-xs text-emerald-600">Archivo Excel listo: <strong>{file.name}</strong></p>}
+            </Field>
+            <Field label="…o pegá contenido CSV (avanzado)">
+              <textarea
+                value={text}
+                onChange={e => { setText(e.target.value); if (e.target.value) setFile(null); }}
+                rows={6}
+                placeholder="TAG,Marca,Modelo,...&#10;,Hikvision,DS-2CD...,..."
+                className={`${inputCls} font-mono text-xs`}
+              />
+            </Field>
+          </>
         ) : (
-          <Field label="Pegá acá el contenido del CSV (con encabezados en la primera fila)">
-            <textarea
-              value={text}
-              onChange={e => setText(e.target.value)}
-              rows={10}
-              placeholder="tag,categorySlug,brand,model,serialNumber,...&#10;PE1H-IT-PC-100,desktop,Dell,Optiplex,SN123,..."
-              className={`${inputCls} font-mono text-xs`}
-            />
-          </Field>
+          <p className="text-sm text-slate-400">Elegí un tipo de activo para empezar.</p>
         )}
       </div>
     </Modal>

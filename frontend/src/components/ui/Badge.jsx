@@ -9,6 +9,7 @@ const VARIANTS = {
   violet:  'bg-violet-50 text-violet-700 border-violet-200',
   indigo:  'bg-indigo-50 text-indigo-700 border-indigo-200',
   orange:  'bg-orange-50 text-orange-700 border-orange-200',
+  teal:    'bg-teal-50 text-teal-700 border-teal-200',
   dark:    'bg-slate-800 text-white border-slate-800',
 };
 
@@ -37,10 +38,10 @@ export function RoleBadge({ role }) {
 
 // ── Estado de activo (RF-INV) ──────────────────────────────────────────────────
 export const ASSET_STATUS_VARIANT = {
-  AVAILABLE: 'emerald', ASSIGNED: 'blue', LOAN: 'violet', REPAIR: 'amber', DAMAGED: 'rose', RETIRED: 'slate', LOST: 'dark',
+  AVAILABLE: 'emerald', ASSIGNED: 'blue', LOAN: 'violet', REPAIR: 'amber', DAMAGED: 'rose', RETIRED: 'slate', LOST: 'dark', IN_PRODUCTION: 'teal',
 };
 export const ASSET_STATUS_LABEL = {
-  AVAILABLE: 'Disponible', ASSIGNED: 'Asignado', LOAN: 'Préstamo', REPAIR: 'En reparación', DAMAGED: 'Dañado', RETIRED: 'Retirado', LOST: 'Perdido',
+  AVAILABLE: 'Disponible', ASSIGNED: 'Asignado', LOAN: 'Préstamo', REPAIR: 'En reparación', DAMAGED: 'Dañado', RETIRED: 'Retirado', LOST: 'Perdido', IN_PRODUCTION: 'En producción',
 };
 export function AssetStatusBadge({ status }) {
   return <Badge variant={ASSET_STATUS_VARIANT[status] || 'slate'}>{ASSET_STATUS_LABEL[status] || status}</Badge>;
