@@ -23,6 +23,7 @@ enum AssetStatus {
   DAMAGED
   RETIRED
   LOST
+  IN_PRODUCTION
 }
 
 enum AssetCondition {
@@ -178,6 +179,17 @@ model Asset {
   accessories       String?        @db.Text
   evidenceFolderUrl String?
   shared            Boolean        @default(false)
+  // Networking / CCTV / Servers (Sprint 1a)
+  ipManagement      String?        // IP de gestión (switch, firewall, AP, cámara, server)
+  internalCode      String?        // Código operativo interno (DC.H 120, A11, M14, etc.)
+  nvrChannel        String?        // Canal NVR (D1-D32 o "Surveillance") — cámaras
+  cameraType        String?        // PTZ / Turret / Bullet / Fisheye / Analog
+  megapixels        Int?           // Solo cámaras
+  ports             Int?           // # puertos físicos — switch / AP
+  role              String?        // core / aggregation / distribution / access — sw; hypervisor / app / db — server
+  haMode            String?        // active / passive — firewalls
+  haPeerAssetId     String?        // referencia soft al peer en HA (no FK formal)
+  displayLocation   String?        // Ubicación legible libre (ej. "PTZ Caseta Mara2", "Comedor Central-1")
   lastRevisionDate  DateTime?
   notes             String?        @db.Text
   createdAt         DateTime       @default(now())
