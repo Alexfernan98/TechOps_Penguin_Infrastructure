@@ -1,8 +1,15 @@
 const router = require('express').Router();
+const multer = require('multer');
 const prisma = require('../../prisma/client');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { audit } = require('../services/auditLog');
 const { notify } = require('../services/notify');
+const { computeNextTag } = require('../services/assetTag');
+const { buildTemplateBuffer, parseUploadedRows } = require('../services/importXlsx');
+const { friendlyPrismaError } = require('../services/prismaError');
+
+// Upload en memoria para parsear plantillas de import (xlsx/csv) sin tocar disco.
+const uploadMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Inventario de Activos (RF-INV) — desarrollo.md §5
@@ -15,8 +22,50 @@ function normalizeBarcode(v) {
   if (v == null || v === '') return null;
   return String(v).trim().padStart(6, '0').slice(-6); // permite ingresar "700" → "000700"
 }
-const STATUS_VALUES    = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST'];
+const STATUS_VALUES    = ['AVAILABLE', 'ASSIGNED', 'LOAN', 'REPAIR', 'DAMAGED', 'RETIRED', 'LOST', 'IN_PRODUCTION'];
 const CONDITION_VALUES = ['GOOD', 'FAIR', 'POOR', 'DAMAGED'];
+
+// Etiquetas ES → valor enum, para import tolerante (el técnico escribe/elige la
+// etiqueta legible desde el dropdown de la plantilla). Espejo del frontend Badge.jsx.
+const STATUS_LABELS = {
+  AVAILABLE: 'Disponible', IN_PRODUCTION: 'En producción', ASSIGNED: 'Asignado',
+  LOAN: 'Préstamo', REPAIR: 'En reparación', DAMAGED: 'Dañado', RETIRED: 'Retirado', LOST: 'Perdido',
+};
+const CONDITION_LABELS = { GOOD: 'Bueno', FAIR: 'Aceptable', POOR: 'Malo', DAMAGED: 'Dañado' };
+
+const _normLabel = (s) => String(s == null ? '' : s).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// Construye un resolvedor valor|etiqueta → valor enum.
+function makeEnumResolver(values, labels) {
+  const idx = {};
+  for (const v of values) { idx[_normLabel(v)] = v; if (labels[v]) idx[_normLabel(labels[v])] = v; }
+  return (input) => idx[_normLabel(input)] || null;
+}
+const resolveStatus    = makeEnumResolver(STATUS_VALUES, STATUS_LABELS);
+const resolveCondition = makeEnumResolver(CONDITION_VALUES, CONDITION_LABELS);
+
+// Agrupación de categorías por dominio — espejo de DOMAINS en
+// frontend/src/lib/categoryFields.js. Usado por el filtro ?domain= del listado.
+const DOMAIN_SLUGS = {
+  it:         ['desktop', 'notebook', 'monitor', 'printer', 'tv', 'phone', 'tablet', 'mouse', 'keyboard', 'stand', 'mousepad'],
+  networking: ['switch', 'firewall', 'ap'],
+  cctv:       ['camera'],
+  dc:         ['server', 'ups', 'rack'],
+};
+// Infraestructura = todo lo que no es IT (no se entrega a funcionarios).
+function isInfraCategory(slug) {
+  return !DOMAIN_SLUGS.it.includes(slug);
+}
+
+// Campos string de Networking/CCTV/DC editables y creables.
+const EXTRA_STRING_FIELDS = ['ipManagement', 'internalCode', 'nvrChannel', 'cameraType', 'role', 'haMode', 'haPeerAssetId', 'displayLocation'];
+// Campos enteros (se parsean aparte).
+const EXTRA_INT_FIELDS = ['megapixels', 'ports'];
+
+function parseIntOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = parseInt(v, 10);
+  return Number.isNaN(n) ? null : n;
+}
 
 const HOLDER_SELECT = {
   id: true, name: true, nameFirst: true, nameLast: true, email: true,
@@ -46,21 +95,6 @@ function shape(a) {
     authorizedUsers: others.map(x => ({ ...x.user, assignmentId: x.id, assignedAt: x.assignedAt })),
     assignments: undefined,
   };
-}
-
-// Próximo TAG correlativo para una categoría (atómico vía transacción en create).
-async function computeNextTag(category, tx = prisma) {
-  const last = await tx.asset.findFirst({
-    where: { categorySlug: category.slug, tag: { startsWith: category.tagPrefix } },
-    orderBy: { tag: 'desc' },
-    select: { tag: true },
-  });
-  let next = 1;
-  if (last) {
-    const m = last.tag.match(/(\d+)$/);
-    if (m) next = parseInt(m[1], 10) + 1;
-  }
-  return `${category.tagPrefix}${String(next).padStart(3, '0')}`;
 }
 
 // ── GET /assets/next-tag?category= ─────────────────────────────────────────────
@@ -122,7 +156,7 @@ router.get('/export', authenticate, requireRole('IT_TECH'), async (req, res, nex
 
 // Construye el filtro Prisma compartido por list y export.
 function buildWhere(req) {
-  const { category, status, condition, dept, location, user, search, includeInactive, onlyInactive } = req.query;
+  const { category, domain, status, condition, dept, location, user, search, includeInactive, onlyInactive } = req.query;
   const where = {};
   if (onlyInactive === 'true') {
     // Solo dados de baja: lógicas (deletedAt) o por status RETIRED/LOST.
@@ -131,7 +165,12 @@ function buildWhere(req) {
   } else if (includeInactive !== 'true') {
     where.deletedAt = null;
   }
-  if (category)  where.categorySlug   = category;
+  // category gana sobre domain (más específico). domain filtra por el set de slugs.
+  if (category) {
+    where.categorySlug = category;
+  } else if (domain && DOMAIN_SLUGS[domain]) {
+    where.categorySlug = { in: DOMAIN_SLUGS[domain] };
+  }
   if (status)    where.status         = status;
   if (condition) where.condition      = condition;
   if (dept)      where.departmentSlug = dept;
@@ -153,6 +192,9 @@ function buildWhere(req) {
       { serialNumber: { contains: s, mode: 'insensitive' } },
       { operatingSystem: { contains: s, mode: 'insensitive' } },
       { vendor:       { contains: s, mode: 'insensitive' } },
+      { ipManagement: { contains: s, mode: 'insensitive' } },
+      { internalCode: { contains: s, mode: 'insensitive' } },
+      { displayLocation: { contains: s, mode: 'insensitive' } },
       { assignments: { some: { returnedAt: null, user: { name: { contains: s, mode: 'insensitive' } } } } },
     ];
   }
@@ -303,6 +345,17 @@ router.post('/', authenticate, requireRole('IT_TECH'), async (req, res, next) =>
           accessories: b.accessories || null,
           shared: b.shared === true,
           notes: b.notes || null,
+          // Networking / CCTV / DC (opcionales)
+          ipManagement:    b.ipManagement || null,
+          internalCode:    b.internalCode || null,
+          nvrChannel:      b.nvrChannel || null,
+          cameraType:      b.cameraType || null,
+          role:            b.role || null,
+          haMode:          b.haMode || null,
+          haPeerAssetId:   b.haPeerAssetId || null,
+          displayLocation: b.displayLocation || null,
+          megapixels:      parseIntOrNull(b.megapixels),
+          ports:           parseIntOrNull(b.ports),
         },
         include: ASSET_INCLUDE,
       });
@@ -343,10 +396,11 @@ router.patch('/:id', authenticate, requireRole('IT_TECH'), async (req, res, next
 
     const FIELDS = ['brand', 'model', 'serialNumber', 'imei', 'macWifi', 'macEth', 'operatingSystem',
       'condition', 'locationSlug', 'departmentSlug', 'details', 'vendor', 'accessories',
-      'evidenceFolderUrl', 'notes'];
+      'evidenceFolderUrl', 'notes', ...EXTRA_STRING_FIELDS];
     const data = {};
     for (const f of FIELDS) if (b[f] !== undefined) data[f] = b[f] || null;
     if (b.shared !== undefined) data.shared = b.shared === true;
+    for (const f of EXTRA_INT_FIELDS) if (b[f] !== undefined) data[f] = parseIntOrNull(b[f]);
     if (b.barcode !== undefined) data.barcode = nextBarcode;
     if (b.purchaseDate  !== undefined) data.purchaseDate  = b.purchaseDate  ? new Date(b.purchaseDate)  : null;
     if (b.warrantyUntil !== undefined) data.warrantyUntil = b.warrantyUntil ? new Date(b.warrantyUntil) : null;
@@ -648,37 +702,122 @@ router.delete('/:id', authenticate, requireRole('IT_ADMIN'), async (req, res, ne
   } catch (err) { next(err); }
 });
 
-// ── POST /assets/import (CSV → rows[]; si TAG existe actualiza, si no crea) ─────
-router.post('/import', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
-  try {
-    const { rows } = req.body;
-    if (!Array.isArray(rows)) return res.status(400).json({ error: 'Body debe incluir rows: array' });
+// Ejecuta la importación de un array de filas ya normalizadas (claves internas).
+// Reglas:
+//  - Fila CON tag → si existe se actualiza, si no se crea con ese tag.
+//  - Fila SIN tag → se crea con TAG correlativo autogenerado según su categoría.
+//  - status/condition aceptan valor enum O etiqueta ES (resolvers tolerantes).
+//  - locationSlug/departmentSlug aceptan el código (slug) O el nombre.
+//  - Categorías de infraestructura (no-IT) sin status → 'IN_PRODUCTION'; IT → 'AVAILABLE'.
+async function runImport(rows, defaultCategorySlug) {
+  const catCache = new Map();
+  const getCat = async (slug) => {
+    if (catCache.has(slug)) return catCache.get(slug);
+    const c = await prisma.assetCategory.findUnique({ where: { slug } });
+    catCache.set(slug, c);
+    return c;
+  };
 
-    const result = { created: 0, updated: 0, skipped: 0, errors: [] };
-    for (const [idx, row] of rows.entries()) {
-      try {
-        const tag = String(row.tag || row.TAG || '').trim();
-        if (!tag) { result.skipped++; continue; }
-        if ((row.macWifi && !MAC_RE.test(row.macWifi)) || (row.macEth && !MAC_RE.test(row.macEth))) {
-          result.errors.push({ row: idx, error: 'MAC con formato inválido' }); continue;
-        }
-        const data = {
-          categorySlug: row.categorySlug || 'desktop',
-          brand: row.brand || null, model: row.model || null,
-          serialNumber: row.serialNumber || null,
-          operatingSystem: row.operatingSystem || null,
-          macWifi: row.macWifi || null, macEth: row.macEth || null,
-          status: row.status || 'AVAILABLE', condition: row.condition || 'GOOD',
-          locationSlug: row.locationSlug || null, departmentSlug: row.departmentSlug || null,
-          details: row.details || null, vendor: row.vendor || null,
-          warrantyUntil: row.warrantyUntil ? new Date(row.warrantyUntil) : null,
-        };
+  // Resolución de ubicación/departamento por slug o nombre.
+  const [locs, depts] = await Promise.all([
+    prisma.location.findMany({ select: { slug: true, name: true } }),
+    prisma.department.findMany({ select: { slug: true, name: true } }),
+  ]);
+  const locBy = {};  locs.forEach(l => { locBy[_normLabel(l.slug)] = l.slug; locBy[_normLabel(l.name)] = l.slug; });
+  const deptBy = {}; depts.forEach(d => { deptBy[_normLabel(d.slug)] = d.slug; deptBy[_normLabel(d.name)] = d.slug; });
+
+  const parseDate = (v) => { if (!v) return null; const d = v instanceof Date ? v : new Date(v); return isNaN(d) ? null : d; };
+
+  const buildData = (row, categorySlug) => {
+    const data = {
+      categorySlug,
+      brand: row.brand || null, model: row.model || null,
+      serialNumber: row.serialNumber || null,
+      operatingSystem: row.operatingSystem || null,
+      macWifi: row.macWifi || null, macEth: row.macEth || null,
+      imei: row.imei || null,
+      status: resolveStatus(row.status) || (isInfraCategory(categorySlug) ? 'IN_PRODUCTION' : 'AVAILABLE'),
+      condition: resolveCondition(row.condition) || 'GOOD',
+      locationSlug: row.locationSlug ? (locBy[_normLabel(row.locationSlug)] || null) : null,
+      departmentSlug: row.departmentSlug ? (deptBy[_normLabel(row.departmentSlug)] || null) : null,
+      details: row.details || null, vendor: row.vendor || null,
+      notes: row.notes || null,
+      warrantyUntil: parseDate(row.warrantyUntil),
+    };
+    for (const f of EXTRA_STRING_FIELDS) if (row[f] != null && row[f] !== '') data[f] = String(row[f]);
+    for (const f of EXTRA_INT_FIELDS)    if (row[f] != null && row[f] !== '') data[f] = parseIntOrNull(row[f]);
+    return data;
+  };
+
+  const result = { created: 0, updated: 0, skipped: 0, errors: [] };
+  for (const [idx, row] of rows.entries()) {
+    try {
+      const categorySlug = row.categorySlug || defaultCategorySlug || 'desktop';
+      const cat = await getCat(categorySlug);
+      if (!cat) { result.errors.push({ row: idx, error: `Categoría desconocida: ${categorySlug}` }); continue; }
+      if ((row.macWifi && !MAC_RE.test(row.macWifi)) || (row.macEth && !MAC_RE.test(row.macEth))) {
+        result.errors.push({ row: idx, error: 'MAC con formato inválido' }); continue;
+      }
+      const tag = String(row.tag || row.TAG || '').trim();
+      const data = buildData(row, categorySlug);
+
+      if (tag) {
         const existing = await prisma.asset.findUnique({ where: { tag } });
         if (existing) { await prisma.asset.update({ where: { tag }, data }); result.updated++; }
         else { await prisma.asset.create({ data: { tag, ...data } }); result.created++; }
-      } catch (e) { result.errors.push({ row: idx, error: e.message }); }
-    }
+      } else {
+        // Sin tag: fila vacía (solo defaults) → omitir; sino autogenerar correlativo.
+        const hasData = Object.entries(data).some(([k, v]) =>
+          v != null && v !== '' && !['categorySlug', 'status', 'condition'].includes(k));
+        if (!hasData) { result.skipped++; continue; }
+        const nextTag = await computeNextTag(cat);
+        await prisma.asset.create({ data: { tag: nextTag, ...data } });
+        result.created++;
+      }
+    } catch (e) { result.errors.push({ row: idx, error: friendlyPrismaError(e) || e.message }); }
+  }
+  return result;
+}
+
+// ── POST /assets/import (rows[] ya parseadas por el frontend) ──────────────────
+router.post('/import', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { rows, defaultCategorySlug } = req.body;
+    if (!Array.isArray(rows)) return res.status(400).json({ error: 'Body debe incluir rows: array' });
+    const result = await runImport(rows, defaultCategorySlug);
     await audit({ req, action: 'CREATE', entityType: 'Asset', entityId: 'bulk-import', after: result });
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+// ── POST /assets/import-template ───────────────────────────────────────────────
+// Genera un .xlsx con encabezados legibles + listas desplegables (data validation)
+// en las columnas restringidas. El frontend arma el "spec" (sabe qué columnas y
+// qué opciones tiene cada categoría); el backend solo construye el archivo.
+// Body: { filename, columns: [{ key, label, options? }] }  (options = lista dropdown)
+router.post('/import-template', authenticate, requireRole('IT_ADMIN'), async (req, res, next) => {
+  try {
+    const { filename, columns } = req.body;
+    if (!Array.isArray(columns) || columns.length === 0) return res.status(400).json({ error: 'columns es requerido' });
+    const buf = await buildTemplateBuffer(columns);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${(filename || 'plantilla').replace(/[^\w.-]/g, '_')}.xlsx"`);
+    res.send(buf);
+  } catch (err) { next(err); }
+});
+
+// ── POST /assets/import-file (sube el .xlsx lleno; el backend lo parsea) ────────
+// multipart: file (xlsx) + defaultCategorySlug + columns (JSON [{key,label}]).
+router.post('/import-file', authenticate, requireRole('IT_ADMIN'), uploadMem.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Falta el archivo' });
+    const defaultCategorySlug = req.body.defaultCategorySlug || null;
+    let columns = [];
+    try { columns = JSON.parse(req.body.columns || '[]'); } catch { columns = []; }
+
+    const rows = await parseUploadedRows(req.file.buffer, columns);
+    const result = await runImport(rows, defaultCategorySlug);
+    await audit({ req, action: 'CREATE', entityType: 'Asset', entityId: 'bulk-import-xlsx', after: result });
     res.json(result);
   } catch (err) { next(err); }
 });

@@ -1,21 +1,22 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Monitor, Ticket, FileText, Bell, Users, ShieldCheck, Settings, X, ChevronDown, ArrowDownToLine, ArrowUpFromLine, Archive } from 'lucide-react';
+import { LayoutDashboard, Monitor, Package, Ticket, FileText, Bell, Users, ShieldCheck, Settings, X, ChevronDown, ArrowDownToLine, ArrowUpFromLine, Archive } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import useAuthStore from '@/store/authStore';
 import clsx from 'clsx';
 import { version as APP_VERSION } from '../../../package.json';
 
 const ROUTES_BY_ROLE = {
-  SUPER_ADMIN: ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
-  IT_ADMIN:    ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
-  IT_TECH:     ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones'],
+  SUPER_ADMIN: ['dashboard', 'assets', 'stock', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
+  IT_ADMIN:    ['dashboard', 'assets', 'stock', 'tickets', 'actas', 'notificaciones', 'users', 'audit', 'config'],
+  IT_TECH:     ['dashboard', 'assets', 'stock', 'tickets', 'actas', 'notificaciones'],
   EMPLOYEE:    ['dashboard', 'tickets', 'actas', 'notificaciones'],
-  READ_ONLY:   ['dashboard', 'assets', 'tickets', 'actas', 'notificaciones', 'audit'],
+  READ_ONLY:   ['dashboard', 'assets', 'stock', 'tickets', 'actas', 'notificaciones', 'audit'],
 };
 
 const NAV_ITEMS = [
   { key: 'dashboard',      to: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
   { key: 'assets',         to: '/assets',         label: 'Inventario',     icon: Monitor },
+  { key: 'stock',          to: '/stock',          label: 'Almacén',        icon: Package },
   { key: 'tickets',        to: '/tickets',        label: 'Tickets',        icon: Ticket },
   {
     key: 'actas', label: 'Actas', icon: FileText,
