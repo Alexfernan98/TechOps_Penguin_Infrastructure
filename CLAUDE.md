@@ -334,6 +334,14 @@ JWT_SECRET, COOKIE_SECRET
 - **No uses `git add -A` sin antes ver `git status --short`** — se cuelan
   `.DS_Store`, dumps, archivos del IDE.
 - **No agregues `Co-Authored-By: Claude`** ni siquiera "por costumbre".
+- **Dependencia nueva del backend → el volumen `node_modules` la tapa.** El
+  volumen anónimo `/app/node_modules` persiste entre rebuilds y le gana al
+  `npm install` del Dockerfile, así que la dep nueva NO llega al contenedor y el
+  backend crashea con `MODULE_NOT_FOUND`. `deploy.sh` ya lo resuelve (paso 4b:
+  `npm install --include=dev` + `prisma generate` dentro del contenedor). Si lo
+  hacés a mano, usá `--include=dev` (sin eso, `NODE_ENV=production` poda nodemon)
+  y corré `npx prisma generate` (sino el cliente Prisma no conoce modelos nuevos
+  → 500 "Error interno del servidor" en los endpoints nuevos).
 
 ## 11. Releases relevantes (referencia rápida)
 

@@ -32,8 +32,25 @@ git pull --ff-only origin main
 echo "── 4) Build + up (Prisma aplica migraciones al arrancar)"
 docker compose up -d --build
 
+# ── 4b) Sincronizar dependencias del contenedor ────────────────────────────────
+# El volumen anónimo /app/node_modules PERSISTE entre rebuilds y le gana al
+# `npm install` del Dockerfile: las dependencias nuevas (ej. exceljs) no llegan
+# al contenedor y el backend crashea con MODULE_NOT_FOUND. Instalamos dentro del
+# contenedor (con dev deps, porque corre nodemon) y regeneramos el cliente Prisma
+# para que conozca modelos/tablas nuevos. El retry cubre el caso en que el backend
+# esté en loop de reinicio por una dep faltante.
+echo "── 4b) Sincronizar dependencias en el contenedor (evita node_modules stale del volumen)"
+tries=0
+until docker compose exec -T backend npm install --include=dev; do
+  tries=$((tries + 1))
+  if [[ $tries -ge 20 ]]; then echo "✗ No se pudo instalar deps en el contenedor tras 20 intentos"; break; fi
+  echo "  contenedor reiniciando, reintento $tries…"; sleep 3
+done
+docker compose exec -T backend npx prisma generate
+docker compose restart backend
+
 echo "── 5) Esperar a que arranque"
-sleep 12
+sleep 10
 docker compose ps
 echo "── últimas líneas backend:"
 docker compose logs --tail=15 backend
